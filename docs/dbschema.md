@@ -242,7 +242,7 @@
 | company_id    | INT       | FK  | Unique Company Identifier                |
 | field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc)     |
 | question_text | VARCHAR   |     | The actual question AI will ask          |
-| answer_value  | VARCHAR   |     | User validated answer                    |
+| answer_value  | JSONB     |     | User validated answer                    |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)        |
 | created_by    | INT       |     | User who created the record              |
 | created_date  | TIMESTAMP |     | Record creation timestamp                |
@@ -258,7 +258,7 @@
 | id            | INT       | PK  | Unique ID                               |
 | qa_id         | INT       | FK  | Unique Answer Identifier                |
 | company_id    | INT       | FK  | Unique Company Identifier               |
-| answer_value  | VARCHAR   |     | Old answer                              |
+| answer_value  | JSONB     |     | Old answer                              |
 | change_reason | VARCHAR   |     | AI's explanation for the change         |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)       |
 | created_by    | INT       |     | User who created the record             |

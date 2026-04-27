@@ -24,6 +24,8 @@ const envSchema = z.object({
 
   ALLOWED_ORIGINS: z.string(),
   DEFAULT_COMPANY_ID: z.coerce.number().default(1),
+
+  AI_SERVICE_URL: z.string().url().default('http://127.0.0.1:8001/api/org-dna'),
 });
 
 const result = envSchema.safeParse(process.env);
