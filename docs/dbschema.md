@@ -276,6 +276,7 @@
 | company_id    | INT       | FK  | Unique Company Identifier                |
 | context_data  | JSONB     |     | Full conversational thread/context       |
 | field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc)     |
+| theory        | JSONB     |     |                                          |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)        |
 | created_by    | INT       |     | User who created the record              |
 | created_date  | TIMESTAMP |     | Record creation timestamp                |

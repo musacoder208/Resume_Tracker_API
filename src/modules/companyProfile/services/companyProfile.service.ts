@@ -1,7 +1,8 @@
 import { AppError } from '@shared/middleware/errorHandler'
 import logger from '@shared/logger/logger'
-import { aiClient, type AnswerRequest, type OrgDnaField } from '../clients/ai.client'
+import { aiClient, type AnswerRequest } from '../clients/ai.client'
 import { companyProfileRepository } from '../repositories/companyProfile.repository'
+import { commonService } from '@shared/services/common.service'
 
 // ─── Shape stored in tbl_profile_ai_chat_session.context_data ────────────────
 interface QAContextData {
@@ -95,42 +96,38 @@ export const companyProfileService = {
       attempt_counters: aiResponse.state.attempt_counters as unknown as Record<string, unknown>,
     }
 
-    // ── INSERT header once (idempotent — skipped if already exists) ──────────
-    const existingHeader = await companyProfileRepository.getProfileHeader(tenantId)
-    console.log(existingHeader,'exist header');
-    if (!existingHeader || Object.keys(existingHeader).length === 0) {
-      const statusId = await companyProfileRepository.getModuleStatusId('Company Profile', 'Approved')
-      if (!statusId) throw new AppError('Status configuration missing for company_profile module', 500)
-      await companyProfileRepository.createProfileHeader(tenantId, statusId, userId)
-      logger.info('Profile header created', { tenantId })
+    // ── Single DB call: insert header (once) + upsert session + save QA ──────
+    const qaSnapshot =
+      (aiResponse.state.org_dna_context?.org_dna_snapshot as Record<string, unknown>) ?? null
+
+    let theory: unknown = null
+    if (closingCaptured) {
+      const fullSnapshot = (qaSnapshot ?? {}) as Record<string, unknown>
+      const simplifiedSnapshot = Object.fromEntries(
+        Object.entries(fullSnapshot).map(([key, field]) => {
+          const f = field as Record<string, unknown>
+          return [key, f.raw_answer ?? f.value ?? null]
+        })
+      )
+      const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot)
+      theory = finalizeResponse.theory
     }
 
-    // ── Always overwrite session context_data on every answer ─────────────────
-    await companyProfileRepository.upsertChatSession(
+    await companyProfileRepository.addUpdateCompanyProfile(
       tenantId,
       nextFieldKey,
       newContextData as unknown as Record<string, unknown>,
+      qaSnapshot,
+      null,
+      null,
+      closingCaptured,
       userId,
-      userId
+      userId,
+      theory
     )
 
-    // ── Q&A complete: save snapshot + flip is_completed flag ──────────────────
     if (closingCaptured) {
-      const snapshot = aiResponse.state.org_dna_context?.org_dna_snapshot ?? {}
-      for (const [fieldKey, fieldData] of Object.entries(snapshot)) {
-        const data = fieldData as OrgDnaField
-        await companyProfileRepository.upsertProfileQA(
-          tenantId,
-          fieldKey,
-          data.question ?? '',
-          { value: data.raw_answer ?? null },
-          userId,
-          userId
-        )
-      }
-
-      await companyProfileRepository.setProfileCompleted(tenantId, userId)
-      logger.info('Profile Q&A completed', { tenantId })
+      logger.info('Profile Q&A completed and theory updated', { tenantId })
       return { completed: true, message: 'Profile Q&A completed successfully' }
     }
 
@@ -141,21 +138,50 @@ export const companyProfileService = {
     }
   },
 
-  // ─── GET /state ───────────────────────────────────────────────────────────────
-  // Returns null header gracefully (profile not started yet)
-  async getProfileState(tenantId: number) {
+  // ─── GET /qa-for-edit ─────────────────────────────────────────────────────────
+  async getQAForEdit(tenantId: number) {
     const header = await companyProfileRepository.getProfileHeader(tenantId)
     if (!header) return { header: null, next_question: null, qa_answers: [] }
 
     const session = await companyProfileRepository.getActiveChatSession(tenantId)
     const qa = await companyProfileRepository.getProfileQA(tenantId)
 
-    // Expose question_context so the landing page can resume the chat
     const nextQuestion = session
       ? (session.context_data as QAContextData)?.question_context ?? null
       : null
 
     return { header, next_question: nextQuestion, qa_answers: qa }
+  },
+
+  // ─── GET /details ─────────────────────────────────────────────────────────────
+  async getProfileDetails(tenantId: number) {
+    return companyProfileRepository.getProfileDetails(tenantId)
+  },
+
+  // ─── GET /master-data ─────────────────────────────────────────────────────────
+  async getMasterData() {
+    return commonService.getMasterDataList()
+  },
+
+  // ─── GET /registration ────────────────────────────────────────────────────────
+  async getCompanyRegistration(tenantId: number) {
+    return commonService.getCompanyRegistrationDetails(tenantId)
+  },
+
+  // ─── PUT /registration ────────────────────────────────────────────────────────
+  async updateCompanyRegistration(
+    tenantId: number,
+    userId: number,
+    data: {
+      company_name?: string
+      company_email?: string
+      company_phone?: string
+      address?: string
+      website?: string
+      registration_number?: string
+    }
+  ) {
+    return companyProfileRepository.updateCompanyRegistration(tenantId, data, userId)
   },
 
   // ─── GET /list ────────────────────────────────────────────────────────────────
@@ -167,9 +193,6 @@ export const companyProfileService = {
   async startUpdateField(fieldKey: string, userId: number, tenantId: number) {
     const header = await companyProfileRepository.getProfileHeader(tenantId)
     if (!header) throw new AppError('Profile not found', 404)
-    if (!header.is_completed) {
-      throw new AppError('Profile Q&A must be completed before updating fields', 400)
-    }
 
     const existingQA = await companyProfileRepository.getProfileQAByFieldKey(tenantId, fieldKey)
     if (!existingQA) throw new AppError(`Field not found: ${fieldKey}`, 404)
@@ -281,16 +304,28 @@ export const companyProfileService = {
       update_context: null,
     }
 
-    // Single atomic DB call: update tbl_profile_qa + insert tbl_profile_qa_audit + update session
-    await companyProfileRepository.bulkUpdateProfileWithAudit(
+    const simplifiedSnapshot = Object.fromEntries(
+      Object.entries(updatedSnapshot).map(([key, field]) => {
+        const f = field as Record<string, unknown>
+        return [key, f.raw_answer ?? f.value ?? null]
+      })
+    )
+    const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot)
+
+    await companyProfileRepository.addUpdateCompanyProfile(
       tenantId,
+      session.field_key,
+      finalContextData,
+      null,
       mappedChanges,
       reason,
-      finalContextData,
-      userId
+      false,
+      userId,
+      userId,
+      finalizeResponse.theory
     )
 
-    logger.info('Profile field update completed', { tenantId, target_field })
+    logger.info('Profile field update completed and theory updated', { tenantId, target_field })
     return {
       completed: true,
       cancelled: false,

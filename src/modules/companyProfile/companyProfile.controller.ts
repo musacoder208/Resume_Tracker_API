@@ -29,13 +29,25 @@ export const companyProfileController = {
     }
   },
 
-  async getProfileState(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  async getQAForEdit(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const { tenantId } = req
       if (!tenantId) throw new AppError('Unauthorized', 401)
 
-      const result = await companyProfileService.getProfileState(tenantId)
-      res.status(200).json({ success: true, message: 'Profile state fetched', data: result })
+      const result = await companyProfileService.getQAForEdit(tenantId)
+      res.status(200).json({ success: true, message: 'Profile Q&A fetched', data: result })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getProfileDetails(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { tenantId } = req
+      if (!tenantId) throw new AppError('Unauthorized', 401)
+
+      const result = await companyProfileService.getProfileDetails(tenantId)
+      res.status(200).json({ success: true, message: 'Profile details fetched', data: result })
     } catch (error) {
       next(error)
     }
@@ -81,6 +93,39 @@ export const companyProfileController = {
       )
       const message = result.completed ? 'Field updated successfully' : 'Response submitted'
       res.status(200).json({ success: true, message, data: result })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getMasterData(_req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await companyProfileService.getMasterData()
+      res.status(200).json({ success: true, message: 'Master data fetched', data: result })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getCompanyRegistration(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { tenantId } = req
+      if (!tenantId) throw new AppError('Unauthorized', 401)
+
+      const result = await companyProfileService.getCompanyRegistration(tenantId)
+      res.status(200).json({ success: true, message: 'Company registration details fetched', data: result })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async updateCompanyRegistration(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { userId, tenantId } = req
+      if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
+
+      const result = await companyProfileService.updateCompanyRegistration(tenantId, userId, req.body)
+      res.status(200).json({ success: true, message: 'Company registration updated', data: result })
     } catch (error) {
       next(error)
     }

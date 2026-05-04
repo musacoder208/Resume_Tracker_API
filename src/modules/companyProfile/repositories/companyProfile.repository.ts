@@ -3,6 +3,41 @@ import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
 
 export const companyProfileRepository = {
+  async addUpdateCompanyProfile(
+    companyId: number,
+    fieldKey: string,
+    contextData: Record<string, unknown>,
+    qaSnapshot: Record<string, unknown> | null,
+    changes: Array<{ field_key: string; after: { value: unknown } }> | null,
+    changeReason: string | null,
+    isCompleted: boolean,
+    createdBy: number,
+    modifiedBy: number,
+    theory: unknown = null
+  ) {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_add_update_company_profile($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::jsonb) AS result',
+        [
+          companyId,
+          fieldKey,
+          JSON.stringify(contextData),
+          qaSnapshot ? JSON.stringify(qaSnapshot) : null,
+          changes ? JSON.stringify(changes) : null,
+          changeReason ?? null,
+          isCompleted,
+          createdBy,
+          modifiedBy,
+          theory !== null && theory !== undefined ? JSON.stringify(theory) : null,
+        ]
+      )
+      return result.rows[0]?.result ?? null
+    } catch (error) {
+      logger.error('DB error in addUpdateCompanyProfile', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
   async getModuleStatusId(moduleName: string, statusName: string): Promise<number | null> {
     try {
       const result = await pool.query(
@@ -189,6 +224,52 @@ export const companyProfileRepository = {
       return result.rows[0]?.list ?? []
     } catch (error) {
       logger.error('DB error in getProfileList', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async updateCompanyRegistration(
+    companyId: number,
+    data: {
+      company_name?: string
+      company_email?: string
+      company_phone?: string
+      address?: string
+      website?: string
+      registration_number?: string
+    },
+    modifiedBy: number
+  ) {
+    try {
+      const result = await pool.query(
+        'SELECT public.fn_update_company_registration($1, $2, $3, $4, $5, $6, $7, $8) AS company',
+        [
+          companyId,
+          data.company_name ?? null,
+          data.company_email ?? null,
+          data.company_phone ?? null,
+          data.address ?? null,
+          data.website ?? null,
+          data.registration_number ?? null,
+          modifiedBy,
+        ]
+      )
+      return result.rows[0]?.company ?? null
+    } catch (error) {
+      logger.error('DB error in updateCompanyRegistration', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getProfileDetails(companyId: number) {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_profile_details($1) AS details',
+        [companyId]
+      )
+      return result.rows[0]?.details ?? null
+    } catch (error) {
+      logger.error('DB error in getProfileDetails', { error })
       throw new AppError('Database error', 500)
     }
   },

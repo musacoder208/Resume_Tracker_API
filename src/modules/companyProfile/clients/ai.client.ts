@@ -128,6 +128,18 @@ export interface UpdateRespondResponse {
   }
 }
 
+// ─── /finalize ───────────────────────────────────────────────────────────────
+
+export interface FinalizeRequest {
+  org_id: string
+  org_dna_snapshot: Record<string, unknown>
+}
+
+export interface FinalizeResponse {
+  success: boolean
+  theory: unknown
+}
+
 // ─── Client ──────────────────────────────────────────────────────────────────
 
 export const aiClient = {
@@ -203,6 +215,21 @@ export const aiClient = {
       return response.data
     } catch (error) {
       logger.error('AI /update-field/respond failed', { error })
+      throw new AppError('AI service unavailable', 503)
+    }
+  },
+
+  // POST /finalize — generate theory after Q&A completes or a field is updated
+  async finalizeProfile(orgId: number, orgDnaSnapshot: Record<string, unknown>): Promise<FinalizeResponse> {
+    try {
+      const response = await axios.post<FinalizeResponse>(`${AI_BASE}/finalize`, {
+        org_id: String(orgId),
+        org_dna_snapshot: orgDnaSnapshot,
+      })
+      logger.info('AI /finalize received', { orgId })
+      return response.data
+    } catch (error) {
+      logger.error('AI /finalize failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
   },

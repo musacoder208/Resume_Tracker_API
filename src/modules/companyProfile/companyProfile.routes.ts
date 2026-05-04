@@ -5,7 +5,7 @@ import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { AppError } from '@shared/middleware/errorHandler'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { companyProfileRepository } from './repositories/companyProfile.repository'
-import { answerSchema, updateStartSchema, updateRespondSchema } from './schemas/companyProfile.schema'
+import { answerSchema, updateStartSchema, updateRespondSchema, updateRegistrationSchema } from './schemas/companyProfile.schema'
 import { companyProfileController } from './companyProfile.controller'
 
 const router = Router()
@@ -24,6 +24,8 @@ const requireAdmin = async (req: RequestWithUser, _res: Response, next: NextFunc
 }
 
 // Admin-only routes
+router.get('/registration', requireAdmin, companyProfileController.getCompanyRegistration)
+router.put('/registration', requireAdmin, validate(updateRegistrationSchema), companyProfileController.updateCompanyRegistration)
 router.post('/start', requireAdmin, companyProfileController.startProfile)
 router.post('/answer', requireAdmin, validate(answerSchema), companyProfileController.submitAnswer)
 router.post('/update/start', requireAdmin, validate(updateStartSchema), companyProfileController.startUpdateField)
@@ -31,7 +33,9 @@ router.post('/update/respond', requireAdmin, validate(updateRespondSchema), comp
 router.delete('/', requireAdmin, companyProfileController.deleteProfile)
 
 // Read-only routes (all authenticated roles)
-router.get('/state', companyProfileController.getProfileState)
+router.get('/qa-for-edit', companyProfileController.getQAForEdit)
+router.get('/details', companyProfileController.getProfileDetails)
 router.get('/list', companyProfileController.getProfileList)
+router.get('/master-data', companyProfileController.getMasterData)
 
 export default router
