@@ -201,7 +201,7 @@
 | status_id   | INT         | PK               |
 | status_name | VARCHAR(50) |                  |
 | module_id   | INT         | FK → Mst_Modules |
-| is_active   | BOOLEAN      |                  |
+| is_active   | BOOLEAN     |                  |
 
 ---
 
@@ -215,94 +215,233 @@
 
 ---
 
+### [Public Schema] - Mst_JobTitle
+
+| Column Name      | Data Type    | Key                   | Description                        |
+| ---------------- | ------------ | --------------------- | ---------------------------------- |
+| id               | INT          | PK                    | Unique ID                          |
+| industry_type_id | INT          | FK → Mst_IndustryType |                                    |
+| title            | VARCHAR(150) |                       |                                    |
+| is_deleted       | BOOLEAN      |                       | Soft delete flag (default: false)  |
+| created_by       | INT          |                       | User who created the record        |
+| created_date     | TIMESTAMP    |                       | Record creation timestamp          |
+| modified_by      | INT          |                       | User who last modified the record  |
+| modified_date    | TIMESTAMP    |                       | Record last modified timestamp     |
+
+---
+
+### [Public Schema] - Mst_Seniority
+
+| Column Name   | Data Type    | Key | Description                        |
+| ------------- | ------------ | --- | ---------------------------------- |
+| id            | INT          | PK  | Unique ID                          |
+| name          | VARCHAR(100) |     |                                    |
+| is_deleted    | BOOLEAN      |     | Soft delete flag (default: false)  |
+| created_by    | INT          |     | User who created the record        |
+| created_date  | TIMESTAMP    |     | Record creation timestamp          |
+| modified_by   | INT          |     | User who last modified the record  |
+| modified_date | TIMESTAMP    |     | Record last modified timestamp     |
+
+---
 
 ## Profile Module Tables
 
 ### [Mechsoft Schema] - company_profile_header
 
-| Column Name       | Data Type | Key | Description                                                     |
-| ----------------- | --------- | --- | --------------------------------------------------------------- |
-| ProfileHeaderId   | INT       | PK  | Unique ID                                                       |
-| company_id        | INT       | FK  | Unique Company Identifier                                       |
-| status_id         | INT       | FK  | Unique Status Identifier                                        |
-| isCompleted       | BOOLEAN   |     | When user clicks on final submission, then it will be true      |
-| is_deleted        | BOOLEAN   |     | Soft delete flag (default: false)                               |
-| created_by        | INT       |     | User who created the record                                     |
-| created_date      | TIMESTAMP |     | Record creation timestamp                                       |
-| modified_by       | INT       |     | User who last modified the record                               |
-| modified_date     | TIMESTAMP |     | Record last modified timestamp                                  |
+| Column Name     | Data Type | Key | Description                                                |
+| --------------- | --------- | --- | ---------------------------------------------------------- |
+| ProfileHeaderId | INT       | PK  | Unique ID                                                  |
+| company_id      | INT       | FK  | Unique Company Identifier                                  |
+| status_id       | INT       | FK  | Unique Status Identifier                                   |
+| isCompleted     | BOOLEAN   |     | When user clicks on final submission, then it will be true |
+| is_deleted      | BOOLEAN   |     | Soft delete flag (default: false)                          |
+| created_by      | INT       |     | User who created the record                                |
+| created_date    | TIMESTAMP |     | Record creation timestamp                                  |
+| modified_by     | INT       |     | User who last modified the record                          |
+| modified_date   | TIMESTAMP |     | Record last modified timestamp                             |
 
 ---
 
 ### [Mechsoft Schema] - tbl_profile_qa
 
-| Column Name   | Data Type | Key | Description                              |
-| ------------- | --------- | --- | ---------------------------------------- |
-| id            | INT       | PK  | Unique ID                                |
-| company_id    | INT       | FK  | Unique Company Identifier                |
-| field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc)     |
-| question_text | VARCHAR   |     | The actual question AI will ask          |
-| answer_value  | JSONB     |     | User validated answer                    |
-| is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)        |
-| created_by    | INT       |     | User who created the record              |
-| created_date  | TIMESTAMP |     | Record creation timestamp                |
-| modified_by   | INT       |     | User who last modified the record        |
-| modified_date | TIMESTAMP |     | Record last modified timestamp           |
+| Column Name   | Data Type | Key | Description                          |
+| ------------- | --------- | --- | ------------------------------------ |
+| id            | INT       | PK  | Unique ID                            |
+| company_id    | INT       | FK  | Unique Company Identifier            |
+| field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc) |
+| question_text | VARCHAR   |     | The actual question AI will ask      |
+| answer_value  | JSONB     |     | User validated answer                |
+| is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)    |
+| created_by    | INT       |     | User who created the record          |
+| created_date  | TIMESTAMP |     | Record creation timestamp            |
+| modified_by   | INT       |     | User who last modified the record    |
+| modified_date | TIMESTAMP |     | Record last modified timestamp       |
 
 ---
 
 ### [Mechsoft Schema] - tbl_profile_qa_audit
 
-| Column Name   | Data Type | Key | Description                             |
-| ------------- | --------- | --- | --------------------------------------- |
-| id            | INT       | PK  | Unique ID                               |
-| qa_id         | INT       | FK  | Unique Answer Identifier                |
-| company_id    | INT       | FK  | Unique Company Identifier               |
-| answer_value  | JSONB     |     | Old answer                              |
-| change_reason | VARCHAR   |     | AI's explanation for the change         |
-| is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)       |
-| created_by    | INT       |     | User who created the record             |
-| created_date  | TIMESTAMP |     | Record creation timestamp               |
-| modified_by   | INT       |     | User who last modified the record       |
-| modified_date | TIMESTAMP |     | Record last modified timestamp          |
+| Column Name   | Data Type | Key | Description                       |
+| ------------- | --------- | --- | --------------------------------- |
+| id            | INT       | PK  | Unique ID                         |
+| qa_id         | INT       | FK  | Unique Answer Identifier          |
+| company_id    | INT       | FK  | Unique Company Identifier         |
+| answer_value  | JSONB     |     | Old answer                        |
+| change_reason | VARCHAR   |     | AI's explanation for the change   |
+| is_deleted    | BOOLEAN   |     | Soft delete flag (default: false) |
+| created_by    | INT       |     | User who created the record       |
+| created_date  | TIMESTAMP |     | Record creation timestamp         |
+| modified_by   | INT       |     | User who last modified the record |
+| modified_date | TIMESTAMP |     | Record last modified timestamp    |
 
 ---
 
 ### [Mechsoft Schema] - tbl_profile_ai_chat_session
 
-| Column Name   | Data Type | Key | Description                              |
-| ------------- | --------- | --- | ---------------------------------------- |
-| id            | INT       | PK  | Unique ID                                |
-| company_id    | INT       | FK  | Unique Company Identifier                |
-| context_data  | JSONB     |     | Full conversational thread/context       |
-| field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc)     |
-| theory        | JSONB     |     |                                          |
-| is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)        |
-| created_by    | INT       |     | User who created the record              |
-| created_date  | TIMESTAMP |     | Record creation timestamp                |
-| modified_by   | INT       |     | User who last modified the record        |
-| modified_date | TIMESTAMP |     | Record last modified timestamp           |
+| Column Name   | Data Type | Key | Description                          |
+| ------------- | --------- | --- | ------------------------------------ |
+| id            | INT       | PK  | Unique ID                            |
+| company_id    | INT       | FK  | Unique Company Identifier            |
+| context_data  | JSONB     |     | Full conversational thread/context   |
+| field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc) |
+| is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)    |
+| created_by    | INT       |     | User who created the record          |
+| created_date  | TIMESTAMP |     | Record creation timestamp            |
+| modified_by   | INT       |     | User who last modified the record    |
+| modified_date | TIMESTAMP |     | Record last modified timestamp       |
+
+---
+
+## JD Module Tables
+
+### [Mechsoft Schema] - tbl_jd_header
+
+| Column Name    | Data Type | Key                    | Description                       |
+| -------------- | --------- | ---------------------- | --------------------------------- |
+| jd_id          | INT       | PK                     | Unique ID                         |
+| company_id     | INT       | FK → Company_Master    |                                   |
+| job_title_id   | INT       | FK → Mst_JobTitle      |                                   |
+| seniority_id   | INT       | FK → Mst_Seniority     |                                   |
+| min_exp        | INT       |                        |                                   |
+| max_exp        | INT       |                        |                                   |
+| is_active      | BOOLEAN   |                        |                                   |
+| status_id      | INT       | FK → Mst_Status        |                                   |
+| start_date     | DATETIME  |                        |                                   |
+| end_date       | DATETIME  |                        |                                   |
+| is_deleted     | BOOLEAN   |                        | Soft delete flag (default: false) |
+| created_by     | INT       |                        | User who created the record       |
+| created_date   | TIMESTAMP |                        | Record creation timestamp         |
+| modified_by    | INT       |                        | User who last modified the record |
+| modified_date  | TIMESTAMP |                        | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_jd_qa
+
+| Column Name   | Data Type | Key             | Description                       |
+| ------------- | --------- | --------------- | --------------------------------- |
+| id            | INT       | PK              | Unique ID                         |
+| jd_id         | INT       | FK → tbl_jd_header |                                |
+| field_key     | VARCHAR   |                 |                                   |
+| question_text | VARCHAR   |                 |                                   |
+| answer_value  | VARCHAR   |                 |                                   |
+| is_deleted    | BOOLEAN   |                 | Soft delete flag (default: false) |
+| created_by    | INT       |                 | User who created the record       |
+| created_date  | TIMESTAMP |                 | Record creation timestamp         |
+| modified_by   | INT       |                 | User who last modified the record |
+| modified_date | TIMESTAMP |                 | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_jd_qa_audit
+
+| Column Name   | Data Type | Key             | Description                       |
+| ------------- | --------- | --------------- | --------------------------------- |
+| audit_id      | INT       | PK              | Unique ID                         |
+| jd_id         | INT       | FK → tbl_jd_header |                                |
+| field_key     | VARCHAR   |                 |                                   |
+| question_text | VARCHAR   |                 |                                   |
+| answer_value  | VARCHAR   |                 |                                   |
+| is_deleted    | BOOLEAN   |                 | Soft delete flag (default: false) |
+| created_by    | INT       |                 | User who created the record       |
+| created_date  | TIMESTAMP |                 | Record creation timestamp         |
+| modified_by   | INT       |                 | User who last modified the record |
+| modified_date | TIMESTAMP |                 | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_jd_ai_chat_data
+
+| Column Name   | Data Type | Key                | Description                                          |
+| ------------- | --------- | ------------------ | ---------------------------------------------------- |
+| id            | INT       | PK                 | Unique ID                                            |
+| jd_id         | INT       | FK → tbl_jd_header |                                                      |
+| qa_history    | JSONB     |                    | The full chat log between the AI and User (JSON)     |
+| jd_theory     | TEXT      |                    | The final AI-generated job description theory     |
+| field_key     | VARCHAR   |                    |                                                      |
+| is_deleted    | BOOLEAN   |                    | Soft delete flag (default: false)                    |
+| created_by    | INT       |                    | User who created the record                          |
+| created_date  | TIMESTAMP |                    | Record creation timestamp                            |
+| modified_by   | INT       |                    | User who last modified the record                    |
+| modified_date | TIMESTAMP |                    | Record last modified timestamp                       |
+
+---
+
+### [Mechsoft Schema] - tbl_jd_weightage
+
+| Column Name       | Data Type | Key                | Description                       |
+| ----------------- | --------- | ------------------ | --------------------------------- |
+| id                | INT       | PK                 | Unique ID                         |
+| jd_id             | INT       | FK → tbl_jd_header | Refers to the ID from JD_Master   |
+| capabilities_json | JSONB     |                    |                                   |
+| is_deleted        | BOOLEAN   |                    | Soft delete flag (default: false) |
+| created_by        | INT       |                    | User who created the record       |
+| created_date      | TIMESTAMP |                    | Record creation timestamp         |
+| modified_by       | INT       |                    | User who last modified the record |
+| modified_date     | TIMESTAMP |                    | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_jd_weightage_audit
+
+| Column Name       | Data Type | Key                      | Description                       |
+| ----------------- | --------- | ------------------------ | --------------------------------- |
+| audit_id          | INT       | PK                       | Unique ID                         |
+| id                | INT       | FK → tbl_jd_weightage    |                                   |
+| jd_id             | INT       | FK → tbl_jd_header       |                                   |
+| capabilities_json | JSONB     |                          |                                   |
+| is_deleted        | BOOLEAN   |                          | Soft delete flag (default: false) |
+| created_by        | INT       |                          | User who created the record       |
+| created_date      | TIMESTAMP |                          | Record creation timestamp         |
+| modified_by       | INT       |                          | User who last modified the record |
+| modified_date     | TIMESTAMP |                          | Record last modified timestamp    |
 
 ---
 
 ## Relationships Summary
 
-| From Table                  | Relationship                          |
-| --------------------------- | ------------------------------------- |
-| Company_Master              | → Industry, Size, Country, State      |
-| Mst_Users                   | → Company_Master, tbl_Roles           |
-| tbl_Roles                   | → Company_Master                      |
-| tbl_Role_Permission         | → Roles + Modules + Permissions       |
-| tbl_CompanyModules          | → Roles + Modules                     |
-| Mst_Dept                    | → Industry + Company                  |
-| Mst_Designation             | → Department                          |
-| Mst_State                   | → Country                             |
-| Mst_City                    | → State                               |
-| company_profile_header      | → Company_Master, Mst_Status          |
-| tbl_profile_qa              | → Company_Master                      |
-| tbl_profile_qa_audit        | → tbl_profile_qa, Company_Master      |
-| tbl_profile_ai_chat_session | → Company_Master                      |
-
+| From Table                  | Relationship                               |
+| --------------------------- | ------------------------------------------ |
+| Company_Master              | → Industry, Size, Country, State           |
+| Mst_Users                   | → Company_Master, tbl_Roles                |
+| tbl_Roles                   | → Company_Master                           |
+| tbl_Role_Permission         | → Roles + Modules + Permissions            |
+| tbl_CompanyModules          | → Roles + Modules                          |
+| Mst_Dept                    | → Industry + Company                       |
+| Mst_Designation             | → Department                               |
+| Mst_State                   | → Country                                  |
+| Mst_City                    | → State                                    |
+| Mst_JobTitle                | → Mst_IndustryType                         |
+| company_profile_header      | → Company_Master, Mst_Status               |
+| tbl_profile_qa              | → Company_Master                           |
+| tbl_profile_qa_audit        | → tbl_profile_qa, Company_Master           |
+| tbl_profile_ai_chat_session | → Company_Master                           |
+| tbl_jd_header               | → Company_Master, Mst_JobTitle, Mst_Seniority, Mst_Status |
+| tbl_jd_qa                   | → tbl_jd_header                            |
+| tbl_jd_qa_audit             | → tbl_jd_header                            |
+| tbl_jd_ai_chat_data         | → tbl_jd_header                            |
+| tbl_jd_weightage            | → tbl_jd_header                            |
+| tbl_jd_weightage_audit      | → tbl_jd_weightage, tbl_jd_header          |
 
 ---
 
