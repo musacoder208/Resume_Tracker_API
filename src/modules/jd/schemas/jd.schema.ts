@@ -2,9 +2,8 @@ import { z } from 'zod'
 
 export const answerJdSchema = z.object({
   answer: z.string().min(1, 'Answer is required'),
-  // Optional for ORG_DNA_CONFIRMATION questions (no DB write needed at that step)
-  job_title_id: z.number().int().positive('job_title_id must be a positive integer').optional(),
-  seniority_id: z.number().int().positive('seniority_id must be a positive integer').optional(),
+  job_title_id: z.number().int().positive('job_title_id must be a positive integer'),
+  seniority_id: z.number().int().positive('seniority_id must be a positive integer'),
 })
 
 // Query params arrive as strings. z.coerce.number() turns undefined → NaN which

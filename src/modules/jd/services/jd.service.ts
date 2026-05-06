@@ -102,24 +102,6 @@ export const jdService = {
     return { sessionId, question }
   },
 
-  async submitOrgDnaConfirmation(params: {
-    answer: string
-    sessionId: string
-    questionId: string
-    fieldKey: string
-  }): Promise<{ nextQuestion: JdNextQuestionResponse }> {
-    await pythonClient.orgDnaConfirmation({
-      session_id: params.sessionId,
-      question_id: params.questionId,
-      field_key: params.fieldKey,
-      confirmation_response: params.answer,
-    })
-
-    const nextQuestion = await pythonClient.getNextQuestion(params.sessionId)
-    logger.info('ORG_DNA_CONFIRMATION submitted', { fieldKey: params.fieldKey })
-    return { nextQuestion }
-  },
-
   async submitJdAnswer(params: {
     answer: string
     jobTitleId: number

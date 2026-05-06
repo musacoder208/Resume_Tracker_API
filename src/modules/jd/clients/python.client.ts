@@ -33,15 +33,11 @@ export interface JdSessionInitResponse {
 export interface JdNextQuestionResponse {
   question_id: string
   question_text: string
-  type: string
-  // Normal question fields
   field_key: string
+  type: string
   mode: string
   can_be_skipped: boolean
   allowed_values: string[] | null
-  // ORG_DNA_CONFIRMATION-specific fields
-  org_dna_dimension: string   // acts as field_key for confirmation questions
-  options: string[]           // acts as allowed_values for confirmation questions
   [key: string]: unknown
 }
 
@@ -54,17 +50,6 @@ export interface JdAnswerRequest {
 export interface JdAnswerResponse {
   qa_history: Record<string, unknown>
   field_values: Record<string, unknown>
-  [key: string]: unknown
-}
-
-export interface JdOrgDnaConfirmationRequest {
-  session_id: string
-  question_id: string
-  field_key: string
-  confirmation_response: string
-}
-
-export interface JdOrgDnaConfirmationResponse {
   [key: string]: unknown
 }
 
@@ -120,20 +105,6 @@ export const pythonClient = {
       return response.data
     } catch (error) {
       logger.error('Python JD /answer failed', { error })
-      throw new AppError('Python service unavailable', 503)
-    }
-  },
-
-  async orgDnaConfirmation(body: JdOrgDnaConfirmationRequest): Promise<JdOrgDnaConfirmationResponse> {
-    try {
-      const response = await httpClient.post<JdOrgDnaConfirmationResponse>(
-        `${PYTHON_BASE}/api/jd/org-dna-confirmation`,
-        body
-      )
-      logger.info('Python JD /org-dna-confirmation submitted', { fieldKey: body.field_key })
-      return response.data
-    } catch (error) {
-      logger.error('Python JD /org-dna-confirmation failed', { error })
       throw new AppError('Python service unavailable', 503)
     }
   },
