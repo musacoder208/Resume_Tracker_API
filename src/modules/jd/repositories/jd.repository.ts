@@ -75,4 +75,21 @@ export const jdRepository = {
       throw new AppError('Database error', 500)
     }
   },
+
+  async getAllJDs(params: {
+    companyId: number
+    jobTitleId?: number
+    seniorityId?: number
+  }): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM mechsoft.fn_get_all_jds($1, $2, $3)',
+        [params.companyId, params.jobTitleId ?? null, params.seniorityId ?? null]
+      )
+      return result.rows
+    } catch (error) {
+      logger.error('DB error in getAllJDs', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
 }

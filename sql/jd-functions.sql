@@ -238,3 +238,53 @@ BEGIN
 
 END;
 $$;
+
+
+-- ------------------------------------------------------------
+-- fn_get_all_jds
+-- Returns all JDs for a company with joined lookup labels.
+-- job_title_id and seniority_id are optional filters.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_get_all_jds(
+  p_company_id   INT,
+  p_job_title_id INT DEFAULT NULL,
+  p_seniority_id INT DEFAULT NULL
+)
+RETURNS TABLE (
+  jd_id        INT,
+  job_title    VARCHAR,
+  seniority    VARCHAR,
+  min_exp      INT,
+  max_exp      INT,
+  is_active    BOOLEAN,
+  status_name  VARCHAR,
+  status_id    INT,
+  start_date   TIMESTAMP,
+  end_date     TIMESTAMP
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    h.id                  AS jd_id,
+    jt.title              AS job_title,
+    s.name                AS seniority,
+    h.min_exp,
+    h.max_exp,
+    h.is_active,
+    st.status_name        AS status_name,
+    h.status_id,
+    h.start_date,
+    h.end_date
+  FROM  mechsoft.tbl_jd_header  h
+  LEFT JOIN public.mst_jobtitle  jt ON jt.id        = h.job_title_id
+  LEFT JOIN public.mst_seniority s  ON s.id         = h.seniority_id
+  LEFT JOIN public.mst_status    st ON st.status_id = h.status_id
+  WHERE h.company_id  = p_company_id
+    AND h.is_deleted  = FALSE
+    AND (p_job_title_id IS NULL OR h.job_title_id = p_job_title_id)
+    AND (p_seniority_id IS NULL OR h.seniority_id = p_seniority_id)
+  ORDER BY h.start_date DESC;
+END;
+$$;

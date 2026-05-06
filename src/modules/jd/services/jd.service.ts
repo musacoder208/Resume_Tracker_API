@@ -1,7 +1,6 @@
 import { jdRepository } from '../repositories/jd.repository'
 import { pythonClient, JdNextQuestionResponse } from '../clients/python.client'
 import logger from '@shared/logger/logger'
-import { AppError } from '@shared/middleware/errorHandler'
 
 function parseExperience(
   answer: string,
@@ -45,19 +44,45 @@ export const jdService = {
     companyId: number,
     userId: number
   ): Promise<{ sessionId: string; question: JdNextQuestionResponse }> {
-    const contextData = await jdRepository.getCompanyProfileContext(companyId)
-    if (!contextData) {
-      throw new AppError('Company profile context not found. Complete company profile first.', 404)
+    // ── TESTING: hardcoded org DNA ────────────────────────────────────────────
+    // TODO: Remove this block and uncomment the DB fetch section below once
+    //       the Python API is validated end-to-end against real profile data.
+    const preparedOrgDna: Record<string, unknown> = {
+      company_name: 'Mechsoft',
+      industry_hint: 'IT',
+      business_model: 'mixed',
+      company_age_years_band: '30+',
+      size_band: '26-50',
+      geography: 'pune, mumbai',
+      work_model: 'hybrid',
+      attitude_vs_skill: 'balanced_only',
+      must_have_traits: "['integrity', 'ownership_mindset', 'problem_solver', 'learning_agility']",
+      learning_expectation: 'high',
+      ownership_expectation: 'high',
+      problem_solving_style: "['structured_process']",
+      execution_style: 'depends_on_context',
+      nice_to_have_traits:
+        'problem_solving_skills, ownership_accountability, adaptability, continuous_learning_mindset, clear_communication, collaboration_effectively',
+      baseline_requirement: 'very_important',
+      collaboration_style: 'team_first',
+      pressure_handling: 'mixed',
+      ambiguity_level: 'medium',
+      structure_level: 'high_process',
+      anti_traits: "['rule_breaking', 'ego_driven', 'poor_learning_attitude']",
+      pace: 'high',
     }
-
-    const orgDnaSnapshot = contextData.org_dna_snapshot as Record<
-      string,
-      { value: unknown }
-    >
-    const preparedOrgDna: Record<string, unknown> = {}
-    Object.keys(orgDnaSnapshot).forEach((key) => {
-      preparedOrgDna[key] = orgDnaSnapshot[key].value
-    })
+    // ── RESTORE AFTER TESTING ─────────────────────────────────────────────────
+    // const contextData: any = await jdRepository.getCompanyProfileContext(companyId)
+    // if (!contextData) {
+    //   throw new AppError('Company profile context not found. Complete company profile first.', 404)
+    // }
+    // const orgDnaSnapshot =
+    //   (contextData.org_dna_context?.org_dna_snapshot as Record<string, { value: unknown }>) || {}
+    // const preparedOrgDna: Record<string, unknown> = {}
+    // Object.keys(orgDnaSnapshot).forEach((key) => {
+    //   preparedOrgDna[key] = orgDnaSnapshot[key].value
+    // })
+    // ─────────────────────────────────────────────────────────────────────────
 
     const sessionResponse = await pythonClient.initSession({
       org_id: String(companyId),
@@ -75,6 +100,24 @@ export const jdService = {
 
     logger.info('JD session started', { companyId, sessionId, userId })
     return { sessionId, question }
+  },
+
+  async submitOrgDnaConfirmation(params: {
+    answer: string
+    sessionId: string
+    questionId: string
+    fieldKey: string
+  }): Promise<{ nextQuestion: JdNextQuestionResponse }> {
+    await pythonClient.orgDnaConfirmation({
+      session_id: params.sessionId,
+      question_id: params.questionId,
+      field_key: params.fieldKey,
+      confirmation_response: params.answer,
+    })
+
+    const nextQuestion = await pythonClient.getNextQuestion(params.sessionId)
+    logger.info('ORG_DNA_CONFIRMATION submitted', { fieldKey: params.fieldKey })
+    return { nextQuestion }
   },
 
   async submitJdAnswer(params: {
@@ -113,7 +156,7 @@ export const jdService = {
       fieldKey: params.fieldKey,
       questionText: params.questionText,
       answerValue: params.answer,
-      qaHistory: answerResponse.qa_history ?? {},
+      qaHistory: answerResponse ?? {},
       jdTheory: null,
       userId: params.userId,
     })
@@ -138,5 +181,11 @@ export const jdService = {
 
     logger.info('JD created successfully', { jdId, companyId: params.companyId })
     return { jdId, isFinalized: true }
+  },
+
+  async getAllJDs(companyId: number, jobTitleId?: number, seniorityId?: number) {
+    const list = await jdRepository.getAllJDs({ companyId, jobTitleId, seniorityId })
+    logger.info('JD list fetched', { companyId, count: list.length })
+    return list
   },
 }
