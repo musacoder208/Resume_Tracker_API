@@ -4,11 +4,12 @@ export const answerSchema = z.object({
   answer: z.string().min(1, 'Answer is required'),
 })
 
-export const updateStartSchema = z.object({
+export const editQuestionSchema = z.object({
   field_key: z.string().min(1, 'field_key is required'),
+  answer: z.string().min(1, 'Answer is required'),
 })
 
-export const updateRespondSchema = z.object({
+export const updateAnswerSchema = z.object({
   answer: z.string().min(1, 'Answer is required'),
 })
 
@@ -25,6 +26,6 @@ export const updateRegistrationSchema = z.object({
 )
 
 export type AnswerDto = z.infer<typeof answerSchema>
-export type UpdateStartDto = z.infer<typeof updateStartSchema>
-export type UpdateRespondDto = z.infer<typeof updateRespondSchema>
+export type EditQuestionDto = z.infer<typeof editQuestionSchema>
+export type UpdateAnswerDto = z.infer<typeof updateAnswerSchema>
 export type UpdateRegistrationDto = z.infer<typeof updateRegistrationSchema>

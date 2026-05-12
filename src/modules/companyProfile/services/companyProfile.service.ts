@@ -54,13 +54,18 @@ export const companyProfileService = {
         attempt_counters: startResponse.state.attempt_counters as unknown as Record<string, unknown>,
       }
     } else {
-      // Subsequent answers — rebuild request body from DB
       const header = await companyProfileRepository.getProfileHeader(tenantId)
       if (header?.is_completed) throw new AppError('Profile Q&A is already completed', 400)
       contextData = existingSession.context_data as QAContextData
     }
 
-    // Build /answer request — state fields are SPREAD at top level (not nested)
+    // Current question being answered — read from contextData before calling Python
+    const currentQCtx = contextData.question_context as Record<string, unknown>
+    const currentFieldKey = currentQCtx?.field_key as string ?? contextData.field_key
+    const currentQuestionText = currentQCtx?.question_text as string ?? ''
+    const currentQuestionType = currentQCtx?.question_type as string ?? 'initial'
+
+    // Build /answer request
     const answerRequest: AnswerRequest = {
       session_id: contextData.session_id,
       org_id: String(tenantId),
@@ -77,11 +82,10 @@ export const companyProfileService = {
 
     const aiResponse = await aiClient.submitAnswer(answerRequest)
 
-    // ── Detect Q&A completion ─────────────────────────────────────────────────
-    const closingCaptured = aiResponse.state?.attempt_counters?.closing_answer_captured === true
+    const closingCaptured = aiResponse.completed === true
     const nextFieldKey = aiResponse.state?.question_context?.field_key ?? contextData.field_key
 
-    // Build context_data to persist — includes answer for full traceability
+    // Build updated context_data to persist
     const newContextData: QAContextData = {
       session_id: contextData.session_id,
       org_id: String(tenantId),
@@ -96,13 +100,36 @@ export const companyProfileService = {
       attempt_counters: aiResponse.state.attempt_counters as unknown as Record<string, unknown>,
     }
 
-    // ── Single DB call: insert header (once) + upsert session + save QA ──────
-    const qaSnapshot =
-      (aiResponse.state.org_dna_context?.org_dna_snapshot as Record<string, unknown>) ?? null
+    // Save current answer directly — one record per call (same as JD pattern)
+    // mode = question_type: 'initial' | 'clarification' | 'crossfield'
+    await companyProfileRepository.upsertProfileQA(
+      tenantId,
+      currentFieldKey,
+      currentQuestionText,
+      { value: answer },
+      userId,
+      userId,
+      currentQuestionType
+    )
 
+    // Handle resolved conflicts — update tbl_profile_qa + audit for each resolved field
+    // Each item: { conflict_id: "...", <field_key>: <answer_value> }
+    const resolvedConflicts = aiResponse.resolved_conflict_ids
+    if (resolvedConflicts && resolvedConflicts.length > 0) {
+      logger.info('Resolving conflicts', { tenantId, count: resolvedConflicts.length })
+      for (const conflict of resolvedConflicts) {
+        const fieldKey = Object.keys(conflict).find((k) => k !== 'conflict_id')
+        if (!fieldKey) continue
+        const resolvedValue = conflict[fieldKey]
+        logger.info('Resolving conflict field', { tenantId, fieldKey, resolvedValue })
+        await companyProfileRepository.resolveConflictQA(tenantId, fieldKey, { value: resolvedValue }, userId)
+      }
+    }
+
+    // Finalize if Q&A completed
     let theory: unknown = null
     if (closingCaptured) {
-      const fullSnapshot = (qaSnapshot ?? {}) as Record<string, unknown>
+      const fullSnapshot = (aiResponse.state.org_dna_context?.org_dna_snapshot ?? {}) as Record<string, unknown>
       const simplifiedSnapshot = Object.fromEntries(
         Object.entries(fullSnapshot).map(([key, field]) => {
           const f = field as Record<string, unknown>
@@ -113,11 +140,13 @@ export const companyProfileService = {
       theory = finalizeResponse.theory
     }
 
+    // Update header (create if first time) + upsert session + flip completed flag
+    // p_qa_snapshot = null → skips snapshot loop in DB function
     await companyProfileRepository.addUpdateCompanyProfile(
       tenantId,
       nextFieldKey,
       newContextData as unknown as Record<string, unknown>,
-      qaSnapshot,
+      null,
       null,
       null,
       closingCaptured,
@@ -189,128 +218,97 @@ export const companyProfileService = {
     return companyProfileRepository.getProfileList(tenantId)
   },
 
-  // ─── POST /update/start ───────────────────────────────────────────────────────
-  async startUpdateField(fieldKey: string, userId: number, tenantId: number) {
-    const header = await companyProfileRepository.getProfileHeader(tenantId)
-    if (!header) throw new AppError('Profile not found', 404)
-
-    const existingQA = await companyProfileRepository.getProfileQAByFieldKey(tenantId, fieldKey)
-    if (!existingQA) throw new AppError(`Field not found: ${fieldKey}`, 404)
-
-    // org_dna_context comes from the saved Q&A chat_session context_data
+  // ─── POST /edit_question ──────────────────────────────────────────────────────
+  // Calls Python /update-field/start then immediately /update-field/respond with
+  // the user's new answer. Returns the next question (e.g. "why are you changing?")
+  // ─── POST /edit_question ─────────────────────────────────────────────────────
+  // Calls Python /update-field/start then immediately /update-field/respond with
+  // the user's new answer. Returns update_context + step to client.
+  async editQuestion(fieldKey: string, answer: string, userId: number, tenantId: number) {
     const session = await companyProfileRepository.getActiveChatSession(tenantId)
-    if (!session) throw new AppError('No chat session found. Cannot start update.', 404)
+    if (!session) throw new AppError('No profile session found', 404)
 
     const savedContext = session.context_data as QAContextData
     const orgDnaContext = savedContext.org_dna_context as Record<string, unknown>
 
-    const aiResponse = await aiClient.startUpdate(tenantId, userId, fieldKey, orgDnaContext)
+    const startResponse = await aiClient.startUpdate(tenantId, userId, fieldKey, orgDnaContext)
+    if (startResponse.cancelled) throw new AppError('Update cancelled by AI', 400)
 
-    // Merge update_context into existing Q&A context (preserves org_dna_context for future updates)
-    const newContextData: Record<string, unknown> = {
-      ...savedContext,
-      update_context: aiResponse.state.update_context,
-    }
-    await companyProfileRepository.upsertChatSession(tenantId, fieldKey, newContextData, userId, userId)
+    const respondResponse = await aiClient.respondToUpdate(
+      userId,
+      startResponse.state.update_context,
+      'answer',
+      answer
+    )
 
-    logger.info('Profile field update started', { tenantId, fieldKey })
+    logger.info('Edit question initiated', { tenantId, fieldKey, step: respondResponse.step })
     return {
-      completed: aiResponse.completed,
-      cancelled: aiResponse.cancelled,
-      context_id: aiResponse.context_id,
-      step: aiResponse.step,
-      next_question: aiResponse.next_question,
-      state: aiResponse.state,
+      completed: respondResponse.completed,
+      step: respondResponse.step,
+      next_question: respondResponse.next_question,
+      update_context: respondResponse.state.update_context,
     }
   },
 
-  // ─── POST /update/respond ─────────────────────────────────────────────────────
-  async respondToUpdate(answer: string, userId: number, tenantId: number) {
-    const header = await companyProfileRepository.getProfileHeader(tenantId)
-    if (!header) throw new AppError('Profile not found', 404)
-
-    const session = await companyProfileRepository.getActiveChatSession(tenantId)
-    if (!session) throw new AppError('No active update session found', 404)
-
-    const savedContext = session.context_data as QAContextData
-    const updateContext = savedContext.update_context
-    if (!updateContext) throw new AppError('No active update context. Call /update/start first.', 400)
-
-    // Derive action from current step:
-    //   "final_confirm" + answer "cancel" → cancel
-    //   "final_confirm" + anything else   → confirm
-    //   all other steps                   → answer
-    const currentStep = (updateContext as Record<string, unknown>).current_step as string
-    let action = 'answer'
-    if (currentStep === 'final_confirm') {
-      action = answer.toLowerCase() === 'cancel' ? 'cancel' : 'confirm'
-    }
+  // ─── POST /update_answer ──────────────────────────────────────────────────────
+  // Client sends back update_context + step from previous response.
+  // step === 'final_confirm' → action switches to 'confirm' automatically.
+  // Loops until completed === true, then saves to DB.
+  async updateAnswer(answer: string, updateContext: Record<string, unknown>, step: string, userId: number, tenantId: number) {
+    const action = step === 'final_confirm' ? 'confirm' : 'answer'
 
     const aiResponse = await aiClient.respondToUpdate(userId, updateContext, action, answer)
 
-    // ── Cancelled: clear update_context, no data changes ─────────────────────
     if (aiResponse.cancelled) {
-      const clearedContext: Record<string, unknown> = { ...savedContext, update_context: null }
-      await companyProfileRepository.upsertChatSession(
-        tenantId, session.field_key, clearedContext, userId, userId
-      )
-      logger.info('Profile field update cancelled', { tenantId })
       return { completed: false, cancelled: true, message: 'Update cancelled' }
     }
 
-    // ── Still in progress: persist latest update_context ─────────────────────
+    // Still in progress — return update_context + step for next call
     if (!aiResponse.completed) {
-      const newContextData: Record<string, unknown> = {
-        ...savedContext,
-        update_context: aiResponse.state.update_context,
-      }
-      await companyProfileRepository.upsertChatSession(
-        tenantId, session.field_key, newContextData, userId, userId
-      )
       return {
         completed: false,
         cancelled: false,
-        context_id: aiResponse.context_id,
         step: aiResponse.step,
         next_question: aiResponse.next_question,
-        state: aiResponse.state,
+        update_context: aiResponse.state.update_context,
       }
     }
 
-    // ── Completed: atomic DB update (QA + audit + session) ────────────────────
-    if (!aiResponse.audit_result) throw new AppError('Unexpected update response: missing audit_result', 500)
+    // Step 4: Completed — update DB
+    const updateCtx = aiResponse.state.update_context as Record<string, unknown>
+    const updatedSnapshot = updateCtx.org_dna_snapshot as Record<string, unknown>
+    const updatedFields = aiResponse.updated_fields ?? []
+    const answersData = updateCtx.answers as Record<string, unknown>
+    const newValue = answersData?.new_value ?? null
+    const reason = answersData?.reason as string ?? 'Field updated'
+    const impactedUpdates = (answersData?.impacted_updates as Record<string, unknown>) ?? {}
 
-    const { target_field, changes, reason } = aiResponse.audit_result.record
+    const mappedChanges = updatedFields.map((fieldKey, index) => {
+      if (index === 0) {
+        return { field_key: fieldKey, after: { value: newValue } }
+      }
+      return { field_key: fieldKey, after: { value: impactedUpdates[fieldKey] ?? null } }
+    })
 
-    // Validate target field exists in changes
-    const targetChange = changes.find((c) => c.field_key === target_field)
-    if (!targetChange) throw new AppError(`Change record not found for field: ${target_field}`, 404)
+    const session = await companyProfileRepository.getActiveChatSession(tenantId)
+    if (!session) throw new AppError('No profile session found', 404)
 
-    // Map changes to format expected by bulk update function
-    const mappedChanges = changes.map((c) => ({
-      field_key: c.field_key,
-      after: { value: (c.after as Record<string, unknown>).value },
-    }))
-
-    // Rebuild context_data: update org_dna_snapshot with new values, clear update_context
-    const updatedSnapshot =
-      (aiResponse.state.update_context as Record<string, unknown>).org_dna_snapshot as Record<string, unknown>
+    const savedCtx = session.context_data as QAContextData
     const finalContextData: Record<string, unknown> = {
-      ...savedContext,
+      ...savedCtx,
       org_dna_context: {
-        ...(savedContext.org_dna_context as Record<string, unknown>),
+        ...(savedCtx.org_dna_context as Record<string, unknown>),
         org_dna_snapshot: updatedSnapshot,
       },
-      update_context: null,
     }
 
-    const simplifiedSnapshot = Object.fromEntries(
-      Object.entries(updatedSnapshot).map(([key, field]) => {
-        const f = field as Record<string, unknown>
-        return [key, f.raw_answer ?? f.value ?? null]
-      })
-    )
-    const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot)
+    // const simplifiedSnapshot = Object.fromEntries(
+    //   Object.entries(updatedSnapshot).map(([key, field]) => {
+    //     const f = field as Record<string, unknown>
+    //     return [key, f.raw_answer ?? f.value ?? null]
+    //   })
+    // )
+    // const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot)
 
     await companyProfileRepository.addUpdateCompanyProfile(
       tenantId,
@@ -322,14 +320,14 @@ export const companyProfileService = {
       false,
       userId,
       userId,
-      finalizeResponse.theory
+      null // finalizeResponse.theory — commented until finalizeProfile is stable
     )
 
-    logger.info('Profile field update completed and theory updated', { tenantId, target_field })
+    logger.info('Answer updated and theory refreshed', { tenantId, updatedFields })
     return {
       completed: true,
       cancelled: false,
-      updated_fields: changes.map((c) => c.field_key),
+      updated_fields: updatedFields,
     }
   },
 

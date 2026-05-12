@@ -27,6 +27,17 @@ function clearTempState(): void {
   tempAllowedValues = null
 }
 
+// Edit QA session state — one active QA edit session at a time
+let tempEditJdId: number | null = null
+let tempEditUpdateContext: Record<string, unknown> | null = null
+let tempEditStep: string | null = null
+
+function clearEditTempState(): void {
+  tempEditJdId = null
+  tempEditUpdateContext = null
+  tempEditStep = null
+}
+
 export const jdController = {
   async startId(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -88,6 +99,7 @@ export const jdController = {
         fieldKey: tempFieldKey,
         type: tempType,
         jdId: tempJdId,
+        mode: tempMode,
       })
 
       tempJdId = result.jdId
@@ -133,16 +145,167 @@ export const jdController = {
     }
   },
 
+  async updateWeightage(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id, user_command } = req.body
+      const companyId = req.tenantId!
+      const userId = req.userId!
+
+      const data = await jdService.updateWeightage({
+        jdId: jd_id,
+        userCommand: user_command,
+        companyId,
+        userId,
+      })
+
+      res.status(200).json({
+        success: true,
+        message: 'JD weightage updated successfully',
+        data,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async generateWeightage(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id, additional_notes } = req.body
+      const companyId = req.tenantId!
+      const userId = req.userId!
+
+      const data = await jdService.generateWeightage({
+        jdId: jd_id,
+        additionalNotes: additional_notes ?? '',
+        companyId,
+        userId,
+      })
+
+      res.status(200).json({
+        success: true,
+        message: 'JD weightage generated successfully',
+        data,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getJdDetailsById(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const jdId = Number(req.params.jd_id)
+      const data = await jdService.getJdDetailsById(jdId)
+
+      res.status(200).json({
+        success: true,
+        message: 'JD details fetched successfully',
+        data,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async getAllJDs(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { company_id, job_title_id, seniority_id } = req.query as unknown as GetAllJdsDto
+      const companyId = req.tenantId!
+      const { job_title_id, seniority_id } = req.query as unknown as GetAllJdsDto
 
-      const data = await jdService.getAllJDs(company_id, job_title_id, seniority_id)
+      const data = await jdService.getAllJDs(companyId, job_title_id, seniority_id)
 
       res.status(200).json({
         success: true,
         message: 'JD list fetched successfully',
         data,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async updateTheory(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id, edit_command } = req.body
+      const userId = req.userId!
+
+      const data = await jdService.updateTheory({
+        jdId: jd_id,
+        editCommand: edit_command,
+        userId,
+      })
+
+      res.status(200).json({
+        success: true,
+        message: 'JD theory updated successfully',
+        data,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async editQa(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id, field_key, answer } = req.body
+      const companyId = req.tenantId!
+      const userId = req.userId!
+
+      const result = await jdService.editQa({
+        jdId: jd_id,
+        fieldKey: field_key,
+        answer,
+        companyId,
+        userId,
+      })
+
+      tempEditJdId = jd_id
+      tempEditUpdateContext = result.updateContext
+      tempEditStep = result.step
+
+      res.status(200).json({
+        success: true,
+        message: 'Edit QA session started',
+        data: result.respondPayload,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async updateQa(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!tempEditJdId || !tempEditUpdateContext || !tempEditStep) {
+        throw new AppError('No active QA edit session. Call POST /api/jd/edit_qa first.', 400)
+      }
+
+      const { answer } = req.body
+      const userId = req.userId!
+
+      const result = await jdService.updateQa({
+        answer,
+        userId,
+        updateContext: tempEditUpdateContext,
+        step: tempEditStep,
+        jdId: tempEditJdId,
+      })
+
+      if (result.isCompleted) {
+        clearEditTempState()
+        res.status(200).json({
+          success: true,
+          message: 'QA answer updated successfully',
+          data: result.respondPayload,
+        })
+        return
+      }
+
+      tempEditUpdateContext = result.updateContext
+      tempEditStep = result.step
+
+      res.status(200).json({
+        success: true,
+        message: 'Answer recorded',
+        data: result.respondPayload,
       })
     } catch (error) {
       next(error)

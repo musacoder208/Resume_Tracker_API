@@ -3,6 +3,15 @@ import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
 import { companyProfileService } from './services/companyProfile.service'
 
+// Edit QA session state — one active edit session at a time
+let tempEditUpdateContext: Record<string, unknown> | null = null
+let tempEditStep: string | null = null
+
+function clearEditTempState(): void {
+  tempEditUpdateContext = null
+  tempEditStep = null
+}
+
 export const companyProfileController = {
   async startProfile(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -65,33 +74,52 @@ export const companyProfileController = {
     }
   },
 
-  async startUpdateField(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  async editQuestion(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const { userId, tenantId } = req
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
-      const result = await companyProfileService.startUpdateField(
+      const result = await companyProfileService.editQuestion(
         req.body.field_key as string,
+        req.body.answer as string,
         userId,
         tenantId
       )
-      res.status(200).json({ success: true, message: 'Update session started', data: result })
+
+      tempEditUpdateContext = result.update_context
+      tempEditStep = result.step
+
+      res.status(200).json({ success: true, message: 'Edit initiated', data: result })
     } catch (error) {
       next(error)
     }
   },
 
-  async respondToUpdate(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  async updateAnswer(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const { userId, tenantId } = req
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
-      const result = await companyProfileService.respondToUpdate(
+      if (!tempEditUpdateContext || !tempEditStep) {
+        throw new AppError('No active edit session. Call /edit_question first.', 400)
+      }
+
+      const result = await companyProfileService.updateAnswer(
         req.body.answer as string,
+        tempEditUpdateContext,
+        tempEditStep,
         userId,
         tenantId
       )
-      const message = result.completed ? 'Field updated successfully' : 'Response submitted'
+
+      if (result.completed) {
+        clearEditTempState()
+      } else {
+        tempEditUpdateContext = result.update_context as Record<string, unknown>
+        tempEditStep = result.step as string
+      }
+
+      const message = result.completed ? 'Answer updated successfully' : 'Response submitted'
       res.status(200).json({ success: true, message, data: result })
     } catch (error) {
       next(error)

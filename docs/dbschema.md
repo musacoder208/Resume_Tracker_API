@@ -269,7 +269,7 @@
 | id            | INT       | PK  | Unique ID                            |
 | company_id    | INT       | FK  | Unique Company Identifier            |
 | field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc) |
-| question_text | VARCHAR   |     | The actual question AI will ask      |
+| question_text | TEXT      |     | The actual question AI will ask      |
 | answer_value  | JSONB     |     | User validated answer                |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)    |
 | created_by    | INT       |     | User who created the record          |
@@ -286,6 +286,7 @@
 | id            | INT       | PK  | Unique ID                         |
 | qa_id         | INT       | FK  | Unique Answer Identifier          |
 | company_id    | INT       | FK  | Unique Company Identifier         |
+| question_text | TEXT      |     | The actual question AI will ask   |
 | answer_value  | JSONB     |     | Old answer                        |
 | change_reason | VARCHAR   |     | AI's explanation for the change   |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false) |
@@ -345,6 +346,7 @@
 | field_key     | VARCHAR   |                 |                                   |
 | question_text | VARCHAR   |                 |                                   |
 | answer_value  | VARCHAR   |                 |                                   |
+| mode          | VARCHAR   |                 |                                   |
 | is_deleted    | BOOLEAN   |                 | Soft delete flag (default: false) |
 | created_by    | INT       |                 | User who created the record       |
 | created_date  | TIMESTAMP |                 | Record creation timestamp         |
@@ -362,6 +364,7 @@
 | field_key     | VARCHAR   |                 |                                   |
 | question_text | VARCHAR   |                 |                                   |
 | answer_value  | VARCHAR   |                 |                                   |
+| mode          | VARCHAR   |                 |                                   |
 | is_deleted    | BOOLEAN   |                 | Soft delete flag (default: false) |
 | created_by    | INT       |                 | User who created the record       |
 | created_date  | TIMESTAMP |                 | Record creation timestamp         |
@@ -387,34 +390,260 @@
 
 ---
 
-### [Mechsoft Schema] - tbl_jd_weightage
+### [Mechsoft Schema] - tbl_jd_weightage_header
 
-| Column Name       | Data Type | Key                | Description                       |
-| ----------------- | --------- | ------------------ | --------------------------------- |
-| id                | INT       | PK                 | Unique ID                         |
-| jd_id             | INT       | FK → tbl_jd_header | Refers to the ID from JD_Master   |
-| capabilities_json | JSONB     |                    |                                   |
-| is_deleted        | BOOLEAN   |                    | Soft delete flag (default: false) |
-| created_by        | INT       |                    | User who created the record       |
-| created_date      | TIMESTAMP |                    | Record creation timestamp         |
-| modified_by       | INT       |                    | User who last modified the record |
-| modified_date     | TIMESTAMP |                    | Record last modified timestamp    |
+| Column Name    | Data Type | Key                | Description                     |
+| -------------- | --------- | ------------------ | ------------------------------- |
+| weightage_id   | INT       | PK                 | Unique ID                       |
+| jd_id          | INT       | FK → tbl_jd_header | Refers to the ID from JD_Master |
+| weightage_json | JSONB     |                    |                                 |
 
 ---
 
-### [Mechsoft Schema] - tbl_jd_weightage_audit
+### [Mechsoft Schema] - tbl_jd_weightage_Capability
 
-| Column Name       | Data Type | Key                      | Description                       |
-| ----------------- | --------- | ------------------------ | --------------------------------- |
-| audit_id          | INT       | PK                       | Unique ID                         |
-| id                | INT       | FK → tbl_jd_weightage    |                                   |
-| jd_id             | INT       | FK → tbl_jd_header       |                                   |
-| capabilities_json | JSONB     |                          |                                   |
-| is_deleted        | BOOLEAN   |                          | Soft delete flag (default: false) |
-| created_by        | INT       |                          | User who created the record       |
-| created_date      | TIMESTAMP |                          | Record creation timestamp         |
-| modified_by       | INT       |                          | User who last modified the record |
-| modified_date     | TIMESTAMP |                          | Record last modified timestamp    |
+| Column Name  | Data Type | Key                                  | Description                                              |
+| ------------ | --------- | ------------------------------------ | -------------------------------------------------------- |
+| id           | INT       | PK                                   | Unique ID                                                |
+| weightage_id | INT       | FK → tbl_jd_weightage_header         | Refers to the weightage_id from tbl_jd_weightage_header  |
+| capability   | VARCHAR   |                                      |                                                          |
+| weight       | DECIMAL   |                                      |                                                          |
+| required     | []        |                                      |                                                          |
+| optional     | []        |                                      |                                                          |
+| description  | VARCHAR   |                                      |                                                          |
+
+---
+
+### [Mechsoft Schema] - tbl_jd_weightage_Capability_Audit
+
+| Column Name  | Data Type | Key                                  | Description                                              |
+| ------------ | --------- | ------------------------------------ | -------------------------------------------------------- |
+| audit_id     | INT       | PK                                   | Unique ID                                                |
+| id           | INT       |                                      |                                                          |
+| weightage_id | INT       | FK → tbl_jd_weightage_header         | Refers to the weightage_id from tbl_jd_weightage_header  |
+| capability   | VARCHAR   |                                      |                                                          |
+| weight       | DECIMAL   |                                      |                                                          |
+| required     | []        |                                      |                                                          |
+| optional     | []        |                                      |                                                          |
+| description  | VARCHAR   |                                      |                                                          |
+
+---
+
+## Candidate Module Tables
+
+### [Mechsoft Schema] - tbl_candidates_header
+
+| Column Name       | Data Type     | Key                | Description                       |
+| ----------------- | ------------- | ------------------ | --------------------------------- |
+| candidate_id      | BIGSERIAL     | PK                 | Unique Candidate ID               |
+| jd_id             | BIGINT        | FK → tbl_jd_header |                                   |
+| full_name         | VARCHAR(255)  |                    |                                   |
+| email             | VARCHAR(255)  |                    |                                   |
+| phone             | VARCHAR(50)   |                    |                                   |
+| location          | VARCHAR(255)  |                    |                                   |
+| linkedin_url      | TEXT          |                    |                                   |
+| github_url        | TEXT          |                    |                                   |
+| portfolio_links   | TEXT[]        |                    |                                   |
+| current_job_title | VARCHAR(255)  |                    |                                   |
+| current_company   | VARCHAR(255)  |                    |                                   |
+| total_experience  | NUMERIC(5,2)  |                    |                                   |
+| resume_file_name  | TEXT          |                    |                                   |
+| resume_file_path  | TEXT          |                    |                                   |
+| candidate_json    | JSONB         |                    |                                   |
+| is_deleted        | BOOLEAN       |                    | Soft delete flag (default: false) |
+| created_by        | BIGINT        |                    | User who created the record       |
+| created_date      | TIMESTAMP     |                    | Record creation timestamp         |
+| modified_by       | BIGINT        |                    | User who last modified the record |
+| modified_date     | TIMESTAMP     |                    | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_skills
+
+| Column Name        | Data Type    | Key                        | Description                       |
+| ------------------ | ------------ | -------------------------- | --------------------------------- |
+| candidate_skill_id | BIGSERIAL    | PK                         | Unique ID                         |
+| candidate_id       | BIGINT       | FK → tbl_candidates_header |                                   |
+| skill_type         | VARCHAR(50)  |                            |                                   |
+| skills             | TEXT[]       |                            |                                   |
+| is_deleted         | BOOLEAN      |                            | Soft delete flag (default: false) |
+| created_by         | BIGINT       |                            | User who created the record       |
+| created_date       | TIMESTAMP    |                            | Record creation timestamp         |
+| modified_by        | BIGINT       |                            | User who last modified the record |
+| modified_date      | TIMESTAMP    |                            | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_education
+
+| Column Name      | Data Type    | Key                        | Description                       |
+| ---------------- | ------------ | -------------------------- | --------------------------------- |
+| education_id     | BIGSERIAL    | PK                         | Unique ID                         |
+| candidate_id     | BIGINT       | FK → tbl_candidates_header |                                   |
+| degree           | VARCHAR(255) |                            |                                   |
+| field_of_study   | VARCHAR(255) |                            |                                   |
+| institution_name | VARCHAR(255) |                            |                                   |
+| is_deleted       | BOOLEAN      |                            | Soft delete flag (default: false) |
+| created_by       | BIGINT       |                            | User who created the record       |
+| created_date     | TIMESTAMP    |                            | Record creation timestamp         |
+| modified_by      | BIGINT       |                            | User who last modified the record |
+| modified_date    | TIMESTAMP    |                            | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_experience
+
+| Column Name   | Data Type    | Key                        | Description                       |
+| ------------- | ------------ | -------------------------- | --------------------------------- |
+| experience_id | BIGSERIAL    | PK                         | Unique ID                         |
+| candidate_id  | BIGINT       | FK → tbl_candidates_header |                                   |
+| company_name  | VARCHAR(255) |                            |                                   |
+| job_title     | VARCHAR(255) |                            |                                   |
+| work_location | VARCHAR(255) |                            |                                   |
+| start_date    | VARCHAR(100) |                            |                                   |
+| end_date      | VARCHAR(100) |                            |                                   |
+| company_size  | VARCHAR(100) |                            |                                   |
+| is_deleted    | BOOLEAN      |                            | Soft delete flag (default: false) |
+| created_by    | BIGINT       |                            | User who created the record       |
+| created_date  | TIMESTAMP    |                            | Record creation timestamp         |
+| modified_by   | BIGINT       |                            | User who last modified the record |
+| modified_date | TIMESTAMP    |                            | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_responsibilities
+
+| Column Name       | Data Type | Key                        | Description                       |
+| ----------------- | --------- | -------------------------- | --------------------------------- |
+| responsibility_id | BIGSERIAL | PK                         | Unique ID                         |
+| candidate_id      | BIGINT    | FK → tbl_candidates_header |                                   |
+| responsibilities  | TEXT[]    |                            |                                   |
+| is_deleted        | BOOLEAN   |                            | Soft delete flag (default: false) |
+| created_by        | BIGINT    |                            | User who created the record       |
+| created_date      | TIMESTAMP |                            | Record creation timestamp         |
+| modified_by       | BIGINT    |                            | User who last modified the record |
+| modified_date     | TIMESTAMP |                            | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_score_header
+
+| Column Name   | Data Type     | Key                        | Description                       |
+| ------------- | ------------- | -------------------------- | --------------------------------- |
+| score_id      | BIGSERIAL     | PK                         | Unique Score ID                   |
+| candidate_id  | BIGINT        | FK → tbl_candidates_header |                                   |
+| base_score    | NUMERIC(10,2) |                            |                                   |
+| final_score   | NUMERIC(10,2) |                            |                                   |
+| verdict       | VARCHAR(100)  |                            |                                   |
+| score_json    | JSONB         |                            |                                   |
+| is_deleted    | BOOLEAN       |                            | Soft delete flag (default: false) |
+| created_by    | INT           |                            | User who created the record       |
+| created_date  | TIMESTAMP     |                            | Record creation timestamp         |
+| modified_by   | INT           |                            | User who last modified the record |
+| modified_date | TIMESTAMP     |                            | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_score_header_audit
+
+| Column Name   | Data Type     | Key                                 | Description                       |
+| ------------- | ------------- | ----------------------------------- | --------------------------------- |
+| audit_id      | BIGSERIAL     | PK                                  | Unique Audit ID                   |
+| score_id      | BIGINT        | FK → tbl_candidate_score_header     |                                   |
+| candidate_id  | BIGINT        | FK → tbl_candidates_header          |                                   |
+| base_score    | NUMERIC(10,2) |                                     |                                   |
+| final_score   | NUMERIC(10,2) |                                     |                                   |
+| verdict       | VARCHAR(100)  |                                     |                                   |
+| score_json    | JSONB         |                                     |                                   |
+| is_deleted    | BOOLEAN       |                                     | Soft delete flag (default: false) |
+| created_by    | INT           |                                     | User who created the record       |
+| created_date  | TIMESTAMP     |                                     | Record creation timestamp         |
+| modified_by   | INT           |                                     | User who last modified the record |
+| modified_date | TIMESTAMP     |                                     | Record last modified timestamp    |
+| audited_by    | INT           |                                     | User who performed the audit      |
+| audited_date  | TIMESTAMP     |                                     | Audit timestamp                   |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_score_group
+
+| Column Name         | Data Type     | Key                                  | Description                       |
+| ------------------- | ------------- | ------------------------------------ | --------------------------------- |
+| group_score_id      | BIGSERIAL     | PK                                   | Unique Group Score ID             |
+| score_id            | BIGINT        | FK → tbl_candidate_score_header      |                                   |
+| group_key           | VARCHAR(200)  |                                      |                                   |
+| group_score         | NUMERIC(10,3) |                                      |                                   |
+| weight              | NUMERIC(10,2) |                                      |                                   |
+| penalty_factor      | NUMERIC(10,3) |                                      |                                   |
+| final_contribution  | NUMERIC(10,2) |                                      |                                   |
+| missing_required    | TEXT[]        |                                      |                                   |
+| present_required    | TEXT[]        |                                      |                                   |
+| optional_present    | TEXT[]        |                                      |                                   |
+| optional_missing    | TEXT[]        |                                      |                                   |
+| llm_classifications | JSONB         |                                      |                                   |
+| is_deleted          | BOOLEAN       |                                      | Soft delete flag (default: false) |
+| created_by          | INT           |                                      | User who created the record       |
+| created_date        | TIMESTAMP     |                                      | Record creation timestamp         |
+| modified_by         | INT           |                                      | User who last modified the record |
+| modified_date       | TIMESTAMP     |                                      | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_score_group_audit
+
+| Column Name         | Data Type     | Key                                  | Description                       |
+| ------------------- | ------------- | ------------------------------------ | --------------------------------- |
+| audit_id            | BIGSERIAL     | PK                                   | Unique Audit ID                   |
+| group_score_id      | BIGINT        | FK → tbl_candidate_score_group       |                                   |
+| score_id            | BIGINT        | FK → tbl_candidate_score_header      |                                   |
+| group_key           | VARCHAR(200)  |                                      |                                   |
+| group_score         | NUMERIC(10,3) |                                      |                                   |
+| weight              | NUMERIC(10,2) |                                      |                                   |
+| penalty_factor      | NUMERIC(10,3) |                                      |                                   |
+| final_contribution  | NUMERIC(10,2) |                                      |                                   |
+| missing_required    | TEXT[]        |                                      |                                   |
+| present_required    | TEXT[]        |                                      |                                   |
+| optional_present    | TEXT[]        |                                      |                                   |
+| optional_missing    | TEXT[]        |                                      |                                   |
+| llm_classifications | JSONB         |                                      |                                   |
+| is_deleted          | BOOLEAN       |                                      | Soft delete flag (default: false) |
+| created_by          | INT           |                                      | User who created the record       |
+| created_date        | TIMESTAMP     |                                      | Record creation timestamp         |
+| modified_by         | INT           |                                      | User who last modified the record |
+| modified_date       | TIMESTAMP     |                                      | Record last modified timestamp    |
+| audited_by          | INT           |                                      | User who performed the audit      |
+| audited_date        | TIMESTAMP     |                                      | Audit timestamp                   |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_feedbacktype
+
+| Column Name      | Data Type    | Key | Description                       |
+| ---------------- | ------------ | --- | --------------------------------- |
+| feedback_type_id | BIGSERIAL    | PK  | Unique Feedback Type ID           |
+| feedback_type    | VARCHAR(200) |     |                                   |
+| is_active        | BOOLEAN      |     |                                   |
+| is_deleted       | BOOLEAN      |     | Soft delete flag                  |
+| created_by       | INT          |     | User who created the record       |
+| created_date     | TIMESTAMP    |     | Record creation timestamp         |
+| modified_by      | INT          |     | User who last modified the record |
+| modified_date    | TIMESTAMP    |     | Record last modified timestamp    |
+
+---
+
+### [Mechsoft Schema] - tbl_candidate_hr_feedbacks
+
+| Column Name      | Data Type | Key                                       | Description                       |
+| ---------------- | --------- | ----------------------------------------- | --------------------------------- |
+| id               | BIGSERIAL | PK                                        | Unique Feedback ID                |
+| candidate_id     | BIGINT    | FK → tbl_candidates_header                |                                   |
+| feedback_type_id | BIGINT    | FK → tbl_candidate_feedbacktype           |                                   |
+| user_feedback    | TEXT      |                                           |                                   |
+| is_deleted       | BOOLEAN   |                                           | Soft delete flag                  |
+| created_by       | INT       |                                           | User who created the record       |
+| created_date     | TIMESTAMP |                                           | Record creation timestamp         |
+| modified_by      | INT       |                                           | User who last modified the record |
+| modified_date    | TIMESTAMP |                                           | Record last modified timestamp    |
 
 ---
 
@@ -440,8 +669,20 @@
 | tbl_jd_qa                   | → tbl_jd_header                            |
 | tbl_jd_qa_audit             | → tbl_jd_header                            |
 | tbl_jd_ai_chat_data         | → tbl_jd_header                            |
-| tbl_jd_weightage            | → tbl_jd_header                            |
-| tbl_jd_weightage_audit      | → tbl_jd_weightage, tbl_jd_header          |
+| tbl_jd_weightage_header          | → tbl_jd_header                            |
+| tbl_jd_weightage_Capability      | → tbl_jd_weightage_header                  |
+| tbl_jd_weightage_Capability_Audit | → tbl_jd_weightage_header                 |
+| tbl_candidates_header       | → tbl_jd_header                            |
+| tbl_candidate_skills        | → tbl_candidates_header                    |
+| tbl_candidate_education     | → tbl_candidates_header                    |
+| tbl_candidate_experience    | → tbl_candidates_header                    |
+| tbl_candidate_responsibilities | → tbl_candidates_header                 |
+| tbl_candidate_score_header     | → tbl_candidates_header                 |
+| tbl_candidate_score_header_audit | → tbl_candidate_score_header          |
+| tbl_candidate_score_group      | → tbl_candidate_score_header            |
+| tbl_candidate_score_group_audit  | → tbl_candidate_score_group, tbl_candidate_score_header |
+| tbl_candidate_feedbacktype       | (lookup table)                                          |
+| tbl_candidate_hr_feedbacks       | → tbl_candidates_header, tbl_candidate_feedbacktype     |
 
 ---
 

@@ -1,6 +1,7 @@
 import { jdRepository } from '../repositories/jd.repository'
-import { pythonClient, JdNextQuestionResponse } from '../clients/python.client'
+import { pythonClient, JdNextQuestionResponse, JdUpdateFieldRespondResponse, JdUpdateTextResponse } from '../clients/python.client'
 import logger from '@shared/logger/logger'
+import { AppError } from '@shared/middleware/errorHandler'
 
 function parseExperience(
   answer: string,
@@ -39,50 +40,57 @@ function parseExperience(
   return { minExp: null, maxExp: null }
 }
 
+// ── TESTING: hardcoded org DNA ────────────────────────────────────────────
+// TODO: Remove this block and restore the DB fetch below once the Python API
+//       is validated end-to-end against real profile data.
+async function getCompanyOrgDna(
+  _companyId: number
+): Promise<Record<string, unknown>> {
+  return {
+    company_name: 'Mechsoft',
+    industry_hint: 'IT',
+    business_model: 'mixed',
+    company_age_years_band: '30+',
+    size_band: '26-50',
+    geography: 'pune, mumbai',
+    work_model: 'on-site',
+    attitude_vs_skill: 'balanced_only',
+    must_have_traits: "['integrity', 'ownership_mindset', 'problem_solver', 'learning_agility']",
+    learning_expectation: 'high',
+    ownership_expectation: 'high',
+    problem_solving_style: "['structured_process']",
+    execution_style: 'depends_on_context',
+    nice_to_have_traits:
+      'problem_solving_skills, ownership_accountability, adaptability, continuous_learning_mindset, clear_communication, collaboration_effectively',
+    baseline_requirement: 'very_important',
+    collaboration_style: 'team_first',
+    pressure_handling: 'mixed',
+    ambiguity_level: 'medium',
+    structure_level: 'high_process',
+    anti_traits: "['rule_breaking', 'ego_driven', 'poor_learning_attitude']",
+    pace: 'high',
+  }
+  // ── RESTORE AFTER TESTING ──────────────────────────────────────────────────
+  // const contextData: any = await jdRepository.getCompanyProfileContext(_companyId)
+  // if (!contextData) {
+  //   throw new AppError('Company profile context not found. Complete company profile first.', 404)
+  // }
+  // const orgDnaSnapshot =
+  //   (contextData.org_dna_context?.org_dna_snapshot as Record<string, { value: unknown }>) || {}
+  // const preparedOrgDna: Record<string, unknown> = {}
+  // Object.keys(orgDnaSnapshot).forEach((key) => {
+  //   preparedOrgDna[key] = orgDnaSnapshot[key].value
+  // })
+  // return preparedOrgDna
+  // ───────────────────────────────────────────────────────────────────────────
+}
+
 export const jdService = {
   async startJdSession(
     companyId: number,
     userId: number
   ): Promise<{ sessionId: string; question: JdNextQuestionResponse }> {
-    // ── TESTING: hardcoded org DNA ────────────────────────────────────────────
-    // TODO: Remove this block and uncomment the DB fetch section below once
-    //       the Python API is validated end-to-end against real profile data.
-    const preparedOrgDna: Record<string, unknown> = {
-      company_name: 'Mechsoft',
-      industry_hint: 'IT',
-      business_model: 'mixed',
-      company_age_years_band: '30+',
-      size_band: '26-50',
-      geography: 'pune, mumbai',
-      work_model: 'hybrid',
-      attitude_vs_skill: 'balanced_only',
-      must_have_traits: "['integrity', 'ownership_mindset', 'problem_solver', 'learning_agility']",
-      learning_expectation: 'high',
-      ownership_expectation: 'high',
-      problem_solving_style: "['structured_process']",
-      execution_style: 'depends_on_context',
-      nice_to_have_traits:
-        'problem_solving_skills, ownership_accountability, adaptability, continuous_learning_mindset, clear_communication, collaboration_effectively',
-      baseline_requirement: 'very_important',
-      collaboration_style: 'team_first',
-      pressure_handling: 'mixed',
-      ambiguity_level: 'medium',
-      structure_level: 'high_process',
-      anti_traits: "['rule_breaking', 'ego_driven', 'poor_learning_attitude']",
-      pace: 'high',
-    }
-    // ── RESTORE AFTER TESTING ─────────────────────────────────────────────────
-    // const contextData: any = await jdRepository.getCompanyProfileContext(companyId)
-    // if (!contextData) {
-    //   throw new AppError('Company profile context not found. Complete company profile first.', 404)
-    // }
-    // const orgDnaSnapshot =
-    //   (contextData.org_dna_context?.org_dna_snapshot as Record<string, { value: unknown }>) || {}
-    // const preparedOrgDna: Record<string, unknown> = {}
-    // Object.keys(orgDnaSnapshot).forEach((key) => {
-    //   preparedOrgDna[key] = orgDnaSnapshot[key].value
-    // })
-    // ─────────────────────────────────────────────────────────────────────────
+    const preparedOrgDna = await getCompanyOrgDna(companyId)
 
     const sessionResponse = await pythonClient.initSession({
       org_id: String(companyId),
@@ -114,6 +122,7 @@ export const jdService = {
     fieldKey: string
     type: string
     jdId: number | null
+    mode: string | null
   }): Promise<{
     jdId: number
     isFinalized: boolean
@@ -127,6 +136,12 @@ export const jdService = {
       answer_payload: params.answer,
     })
 
+    // For ORG_DNA_CONFIRMATION: use the confirmed answer from field_values[fieldKey]
+    const resolvedAnswerValue =
+      params.type === 'ORG_DNA_CONFIRMATION'
+        ? String(answerResponse.field_values?.[params.fieldKey] ?? params.answer)
+        : params.answer
+
     const jdId = await jdRepository.addUpdateJd({
       jdId: params.jdId,
       companyId: params.companyId,
@@ -137,10 +152,11 @@ export const jdService = {
       sessionId: params.sessionId,
       fieldKey: params.fieldKey,
       questionText: params.questionText,
-      answerValue: params.answer,
+      answerValue: resolvedAnswerValue,
       qaHistory: answerResponse ?? {},
       jdTheory: null,
       userId: params.userId,
+      mode: params.mode,
     })
 
     if (params.type !== 'FINAL_QUESTION') {
@@ -165,9 +181,236 @@ export const jdService = {
     return { jdId, isFinalized: true }
   },
 
+  async getJdDetailsById(jdId: number) {
+    const data = await jdRepository.getJdDetailsById(jdId)
+    if (!data) {
+      throw new AppError('JD not found', 404)
+    }
+    logger.info('JD details fetched', { jdId, status: data.statusName })
+    return data
+  },
+
+  async generateWeightage(params: {
+    jdId: number
+    additionalNotes: string
+    companyId: number
+    userId: number
+  }) {
+    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
+    if (!jdDetails) {
+      throw new AppError('JD not found', 404)
+    }
+
+    const companyInfo = await getCompanyOrgDna(params.companyId)
+
+    const weightsResponse = await pythonClient.generateWeights({
+      jd_id: String(params.jdId),
+      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
+      field_progress: (jdDetails.fieldProgress as Record<string, unknown>) ?? {},
+      company_info: companyInfo,
+      additional_notes: params.additionalNotes,
+      created_by: String(params.userId),
+    })
+
+    // Convert capabilities object { key: {weight,required,...} } → array for DB
+    const capabilitiesArray = Object.entries(weightsResponse.weights?.capabilities ?? {}).map(
+      ([key, val]) => ({
+        capability: key,
+        weight: val.weight,
+        required: val.required ?? [],
+        optional: val.optional ?? [],
+        description: val.description ?? '',
+      })
+    )
+
+    const weightageId = await jdRepository.addUpdateJdWeightage({
+      jdId: params.jdId,
+      weightageJson: weightsResponse as unknown as Record<string, unknown>,
+      capabilities: capabilitiesArray,
+      userId: params.userId,
+    })
+
+    logger.info('JD weightage generated', { jdId: params.jdId, weightageId })
+    return { weightageId, capabilities: capabilitiesArray }
+  },
+
+  async updateWeightage(params: {
+    jdId: number
+    userCommand: string
+    companyId: number
+    userId: number
+  }) {
+    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
+    if (!jdDetails) {
+      throw new AppError('JD not found', 404)
+    }
+    if (!jdDetails.weightageJson) {
+      throw new AppError('No weightage found for this JD. Generate weightage first.', 400)
+    }
+
+    const companyInfo = await getCompanyOrgDna(params.companyId)
+
+    const adjustResponse = await pythonClient.adjustWeights({
+      jd_id: String(params.jdId),
+      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
+      current_weights: jdDetails.weightageJson as Record<string, unknown>,
+      company_info: companyInfo,
+      user_command: params.userCommand,
+      adjusted_by: String(params.userId),
+    })
+
+    const capabilitiesArray = Object.entries(adjustResponse.weights_payload?.capabilities ?? {}).map(
+      ([key, val]) => ({
+        capability: key,
+        weight: val.weight,
+        required: val.required ?? [],
+        optional: val.optional ?? [],
+        description: val.description ?? '',
+      })
+    )
+
+    const weightageId = await jdRepository.addUpdateJdWeightage({
+      jdId: params.jdId,
+      weightageJson: { ...adjustResponse, weights: adjustResponse.weights_payload } as unknown as Record<string, unknown>,
+      capabilities: capabilitiesArray,
+      userId: params.userId,
+    })
+
+    logger.info('JD weightage updated', { jdId: params.jdId, weightageId })
+    return { weightageId, capabilities: capabilitiesArray }
+  },
+
   async getAllJDs(companyId: number, jobTitleId?: number, seniorityId?: number) {
     const list = await jdRepository.getAllJDs({ companyId, jobTitleId, seniorityId })
     logger.info('JD list fetched', { companyId, count: list.length })
     return list
+  },
+
+  async updateTheory(params: {
+    jdId: number
+    editCommand: string
+    userId: number
+  }): Promise<JdUpdateTextResponse> {
+    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
+    if (!jdDetails) {
+      throw new AppError('JD not found', 404)
+    }
+    if (!jdDetails.jdTheory) {
+      throw new AppError('JD theory not found. Finalize the JD first.', 400)
+    }
+
+    const pythonResponse = await pythonClient.updateText({
+      jd_id: String(params.jdId),
+      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
+      edit_command: params.editCommand,
+      rendered_text: jdDetails.jdTheory,
+      edit_reason: '',
+      edited_by: String(params.userId),
+      conversation_mode: true,
+      conversation_history: [],
+    })
+
+    await jdRepository.updateJdTheory({
+      jdId: params.jdId,
+      renderedText: pythonResponse.rendered_text,
+      modifiedFields: pythonResponse.modified_fields ?? [],
+      updatedFieldValues: pythonResponse.updated_field_values ?? {},
+      userId: params.userId,
+    })
+
+    logger.info('JD theory updated', { jdId: params.jdId, modifiedFields: pythonResponse.modified_fields })
+    return pythonResponse
+  },
+
+  async editQa(params: {
+    jdId: number
+    fieldKey: string
+    answer: string
+    companyId: number
+    userId: number
+  }): Promise<{
+    updateContext: Record<string, unknown>
+    step: string
+    respondPayload: JdUpdateFieldRespondResponse
+  }> {
+    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
+    if (!jdDetails) {
+      throw new AppError('JD not found', 404)
+    }
+
+    const orgDna = await getCompanyOrgDna(params.companyId)
+
+    const startResponse = await pythonClient.updateFieldStart({
+      org_id: String(params.companyId),
+      jd_id: String(params.jdId),
+      user_id: String(params.userId),
+      field_key: params.fieldKey,
+      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
+      field_progress: (jdDetails.fieldProgress as Record<string, unknown>) ?? {},
+      org_dna_snapshot: orgDna,
+      skip_question: true,
+    })
+
+    const updateContext = startResponse.state.update_context
+
+    const respondResponse = await pythonClient.updateFieldRespond({
+      user_id: String(params.userId),
+      update_context: updateContext,
+      action: 'answer',
+      answer: params.answer,
+    })
+
+    logger.info('JD edit_qa started', { jdId: params.jdId, fieldKey: params.fieldKey, step: respondResponse.step })
+    return {
+      updateContext: respondResponse.state.update_context,
+      step: respondResponse.step,
+      respondPayload: respondResponse,
+    }
+  },
+
+  async updateQa(params: {
+    answer: string
+    userId: number
+    updateContext: Record<string, unknown>
+    step: string
+    jdId: number
+  }): Promise<{
+    isCompleted: boolean
+    updateContext: Record<string, unknown>
+    step: string
+    respondPayload: JdUpdateFieldRespondResponse
+  }> {
+    const action = params.step === 'final_confirm' ? 'confirm' : 'answer'
+
+    const respondResponse = await pythonClient.updateFieldRespond({
+      user_id: String(params.userId),
+      update_context: params.updateContext,
+      action,
+      answer: params.answer,
+    })
+
+    if (respondResponse.completed) {
+      const stateContext = respondResponse.state.update_context
+      const fieldKey = stateContext?.target_field as string
+      const newAnswer = (stateContext as any)?.answers?.new_value as string
+
+      await jdRepository.editJdQaAnswer({
+        jdId: params.jdId,
+        fieldKey,
+        newAnswer,
+        userId: params.userId,
+      })
+
+      logger.info('JD QA answer updated', { jdId: params.jdId, fieldKey })
+      return { isCompleted: true, updateContext: stateContext, step: respondResponse.step, respondPayload: respondResponse }
+    }
+
+    logger.info('JD update_qa progressing', { step: respondResponse.step })
+    return {
+      isCompleted: false,
+      updateContext: respondResponse.state.update_context,
+      step: respondResponse.step,
+      respondPayload: respondResponse,
+    }
   },
 }

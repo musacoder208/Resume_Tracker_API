@@ -33,6 +33,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.result ?? null
     } catch (error) {
+      console.error('RAW DB ERROR addUpdateCompanyProfile:', (error as Error).message)
       logger.error('DB error in addUpdateCompanyProfile', { error })
       throw new AppError('Database error', 500)
     }
@@ -46,6 +47,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.status_id ?? null
     } catch (error) {
+      console.error('RAW DB ERROR getModuleStatusId:', (error as Error).message)
       logger.error('DB error in getModuleStatusId', { error })
       throw new AppError('Database error', 500)
     }
@@ -53,14 +55,15 @@ export const companyProfileRepository = {
 
   async isAdminRole(roleId: number, companyId: number): Promise<boolean> {
     try {
-      console.log(roleId,'roleId');
-      console.log(companyId,'companyId');
+      console.log(roleId, 'roleId')
+      console.log(companyId, 'companyId')
       const result = await pool.query(
         'SELECT public.fn_is_admin_role($1, $2) AS is_admin',
         [roleId, companyId]
       )
       return result.rows[0]?.is_admin ?? false
     } catch (error) {
+      console.error('RAW DB ERROR isAdminRole:', (error as Error).message)
       logger.error('DB error in isAdminRole', { error })
       throw new AppError('Database error', 500)
     }
@@ -74,6 +77,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.header ?? null
     } catch (error) {
+      console.error('RAW DB ERROR getProfileHeader:', (error as Error).message)
       logger.error('DB error in getProfileHeader', { error })
       throw new AppError('Database error', 500)
     }
@@ -87,6 +91,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.header ?? null
     } catch (error) {
+      console.error('RAW DB ERROR createProfileHeader:', (error as Error).message)
       logger.error('DB error in createProfileHeader', { error })
       throw new AppError('Database error', 500)
     }
@@ -100,6 +105,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.success ?? false
     } catch (error) {
+      console.error('RAW DB ERROR setProfileCompleted:', (error as Error).message)
       logger.error('DB error in setProfileCompleted', { error })
       throw new AppError('Database error', 500)
     }
@@ -113,6 +119,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.header ?? null
     } catch (error) {
+      console.error('RAW DB ERROR completeProfileHeader:', (error as Error).message)
       logger.error('DB error in completeProfileHeader', { error })
       throw new AppError('Database error', 500)
     }
@@ -132,6 +139,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.session ?? null
     } catch (error) {
+      console.error('RAW DB ERROR upsertChatSession:', (error as Error).message)
       logger.error('DB error in upsertChatSession', { error })
       throw new AppError('Database error', 500)
     }
@@ -145,6 +153,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.session ?? null
     } catch (error) {
+      console.error('RAW DB ERROR getActiveChatSession:', (error as Error).message)
       logger.error('DB error in getActiveChatSession', { error })
       throw new AppError('Database error', 500)
     }
@@ -156,15 +165,17 @@ export const companyProfileRepository = {
     questionText: string,
     answerValue: Record<string, unknown>,
     createdBy: number,
-    modifiedBy: number
+    modifiedBy: number,
+    mode: string | null = null
   ) {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_upsert_profile_qa($1, $2, $3, $4, $5, $6) AS qa',
-        [companyId, fieldKey, questionText, JSON.stringify(answerValue), createdBy, modifiedBy]
+        'SELECT mechsoft.fn_upsert_profile_qa($1, $2, $3, $4::jsonb, $5, $6, $7) AS qa',
+        [companyId, fieldKey, questionText, JSON.stringify(answerValue), createdBy, modifiedBy, mode]
       )
       return result.rows[0]?.qa ?? null
     } catch (error) {
+      console.error('RAW DB ERROR upsertProfileQA:', (error as Error).message)
       logger.error('DB error in upsertProfileQA', { error })
       throw new AppError('Database error', 500)
     }
@@ -178,6 +189,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.qa ?? []
     } catch (error) {
+      console.error('RAW DB ERROR getProfileQA:', (error as Error).message)
       logger.error('DB error in getProfileQA', { error })
       throw new AppError('Database error', 500)
     }
@@ -191,6 +203,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.qa ?? null
     } catch (error) {
+      console.error('RAW DB ERROR getProfileQAByFieldKey:', (error as Error).message)
       logger.error('DB error in getProfileQAByFieldKey', { error })
       throw new AppError('Database error', 500)
     }
@@ -210,6 +223,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.result ?? null
     } catch (error) {
+      console.error('RAW DB ERROR bulkUpdateProfileWithAudit:', (error as Error).message)
       logger.error('DB error in bulkUpdateProfileWithAudit', { error })
       throw new AppError('Database error', 500)
     }
@@ -223,6 +237,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.list ?? []
     } catch (error) {
+      console.error('RAW DB ERROR getProfileList:', (error as Error).message)
       logger.error('DB error in getProfileList', { error })
       throw new AppError('Database error', 500)
     }
@@ -256,6 +271,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.company ?? null
     } catch (error) {
+      console.error('RAW DB ERROR updateCompanyRegistration:', (error as Error).message)
       logger.error('DB error in updateCompanyRegistration', { error })
       throw new AppError('Database error', 500)
     }
@@ -269,7 +285,26 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.details ?? null
     } catch (error) {
+      console.error('RAW DB ERROR getProfileDetails:', (error as Error).message)
       logger.error('DB error in getProfileDetails', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async resolveConflictQA(
+    companyId: number,
+    fieldKey: string,
+    answerValue: Record<string, unknown>,
+    modifiedBy: number
+  ) {
+    try {
+      await pool.query(
+        'SELECT mechsoft.fn_resolve_conflict_qa($1, $2, $3::jsonb, $4)',
+        [companyId, fieldKey, JSON.stringify(answerValue), modifiedBy]
+      )
+    } catch (error) {
+      console.error('RAW DB ERROR resolveConflictQA:', (error as Error).message)
+      logger.error('DB error in resolveConflictQA', { error })
       throw new AppError('Database error', 500)
     }
   },
@@ -282,6 +317,7 @@ export const companyProfileRepository = {
       )
       return result.rows[0]?.success ?? false
     } catch (error) {
+      console.error('RAW DB ERROR softDeleteProfile:', (error as Error).message)
       logger.error('DB error in softDeleteProfile', { error })
       throw new AppError('Database error', 500)
     }

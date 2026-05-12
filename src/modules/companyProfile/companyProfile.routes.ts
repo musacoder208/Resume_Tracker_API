@@ -5,7 +5,7 @@ import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { AppError } from '@shared/middleware/errorHandler'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { companyProfileRepository } from './repositories/companyProfile.repository'
-import { answerSchema, updateStartSchema, updateRespondSchema, updateRegistrationSchema } from './schemas/companyProfile.schema'
+import { answerSchema, editQuestionSchema, updateAnswerSchema, updateRegistrationSchema } from './schemas/companyProfile.schema'
 import { companyProfileController } from './companyProfile.controller'
 
 const router = Router()
@@ -28,8 +28,8 @@ router.get('/registration', requireAdmin, companyProfileController.getCompanyReg
 router.put('/registration', requireAdmin, validate(updateRegistrationSchema), companyProfileController.updateCompanyRegistration)
 router.post('/start', requireAdmin, companyProfileController.startProfile)
 router.post('/answer', requireAdmin, validate(answerSchema), companyProfileController.submitAnswer)
-router.post('/update/start', requireAdmin, validate(updateStartSchema), companyProfileController.startUpdateField)
-router.post('/update/respond', requireAdmin, validate(updateRespondSchema), companyProfileController.respondToUpdate)
+router.post('/edit_question', requireAdmin, validate(editQuestionSchema), companyProfileController.editQuestion)
+router.post('/update_answer', requireAdmin, validate(updateAnswerSchema), companyProfileController.updateAnswer)
 router.delete('/', requireAdmin, companyProfileController.deleteProfile)
 
 // Read-only routes (all authenticated roles)

@@ -82,11 +82,17 @@ export interface AnswerRequest {
   attempt_counters: Record<string, unknown>
 }
 
+export interface ResolvedConflict {
+  conflict_id: string
+  [fieldKey: string]: unknown  // dynamic field_key: answer_value
+}
+
 export interface AnswerResponse {
   success: boolean
   completed: boolean
   next_question: AINextQuestion | null
   state: AIState
+  resolved_conflict_ids?: ResolvedConflict[] | null
 }
 
 // ─── /update-field/start ─────────────────────────────────────────────────────
@@ -115,17 +121,7 @@ export interface UpdateRespondResponse {
   state: {
     update_context: Record<string, unknown>
   }
-  audit_result?: {
-    record: {
-      target_field: string
-      reason: string
-      changes: Array<{
-        field_key: string
-        before: Record<string, unknown>
-        after: Record<string, unknown>
-      }>
-    }
-  }
+  updated_fields?: string[]
 }
 
 // ─── /finalize ───────────────────────────────────────────────────────────────
@@ -157,6 +153,9 @@ export const aiClient = {
       logger.info('AI /start session initiated', { orgId, userId })
       return response.data
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('RAW AI ERROR /start:', error.response?.status, JSON.stringify(error.response?.data))
+      }
       logger.error('AI /start failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
@@ -169,6 +168,9 @@ export const aiClient = {
       logger.info('AI /answer received', { fieldKey: body.field_key })
       return response.data
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('RAW AI ERROR /answer:', error.response?.status, JSON.stringify(error.response?.data))
+      }
       logger.error('AI /answer failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
@@ -187,10 +189,14 @@ export const aiClient = {
         user_id: String(userId),
         field_key: fieldKey,
         org_dna_context: orgDnaContext,
+        skip_question: true,
       })
       logger.info('AI /update-field/start received', { fieldKey })
       return response.data
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('RAW AI ERROR /update-field/start:', error.response?.status, JSON.stringify(error.response?.data))
+      }
       logger.error('AI /update-field/start failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
@@ -214,6 +220,9 @@ export const aiClient = {
       logger.info('AI /update-field/respond received', { action })
       return response.data
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('RAW AI ERROR /update-field/respond:', error.response?.status, JSON.stringify(error.response?.data))
+      }
       logger.error('AI /update-field/respond failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
@@ -229,6 +238,9 @@ export const aiClient = {
       logger.info('AI /finalize received', { orgId })
       return response.data
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('RAW AI ERROR /finalize:', error.response?.status, JSON.stringify(error.response?.data))
+      }
       logger.error('AI /finalize failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
