@@ -538,6 +538,70 @@ $$;
 
 
 -- ------------------------------------------------------------
+-- fn_delete_jd
+-- Checks if this JD is referenced by any candidate in
+-- tbl_candidates_header. If yes → returns FALSE (blocked).
+-- If no → soft-deletes tbl_jd_header, tbl_jd_qa,
+-- tbl_jd_ai_chat_data, and tbl_jd_weightage_Capability,
+-- then returns TRUE.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_delete_jd(
+  p_jd_id   INT,
+  p_user_id INT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_candidate_count INT;
+BEGIN
+
+  SELECT COUNT(*) INTO v_candidate_count
+  FROM mechsoft.tbl_candidates_header
+  WHERE jd_id      = p_jd_id
+    AND is_deleted = FALSE;
+
+  IF v_candidate_count > 0 THEN
+    RETURN FALSE;
+  END IF;
+
+  UPDATE mechsoft.tbl_jd_header
+  SET
+    is_deleted    = TRUE,
+    modified_by   = p_user_id,
+    modified_date = NOW()
+  WHERE jd_id      = p_jd_id
+    AND is_deleted = FALSE;
+
+  UPDATE mechsoft.tbl_jd_qa
+  SET
+    is_deleted    = TRUE,
+    modified_by   = p_user_id,
+    modified_date = NOW()
+  WHERE jd_id      = p_jd_id
+    AND is_deleted = FALSE;
+
+  UPDATE mechsoft.tbl_jd_ai_chat_data
+  SET
+    is_deleted    = TRUE,
+    modified_by   = p_user_id,
+    modified_date = NOW()
+  WHERE jd_id      = p_jd_id
+    AND is_deleted = FALSE;
+
+  UPDATE mechsoft.tbl_jd_weightage_Capability c
+  SET    is_deleted  = TRUE
+  FROM   mechsoft.tbl_jd_weightage_header h
+  WHERE  h.jd_id        = p_jd_id
+    AND  c.weightage_id = h.weightage_id
+    AND  c.is_deleted   = FALSE;
+
+  RETURN TRUE;
+END;
+$$;
+
+
+-- ------------------------------------------------------------
 -- fn_update_jd_theory
 -- For each modified field: archives the qa row to audit, then
 -- updates answer_value in tbl_jd_qa.

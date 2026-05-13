@@ -34,6 +34,23 @@ export const authController = {
     }
   },
 
+  async logout(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user?.userId
+      const tenantId = req.user?.tenantId
+      if (!userId || !tenantId) {
+        throw new AppError('Unauthorized', 401)
+      }
+      await authService.logout(req.body.refreshToken as string, userId, tenantId)
+      res.status(200).json({
+        success: true,
+        message: 'Logged out successfully',
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async getAccess(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user?.userId

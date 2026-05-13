@@ -73,6 +73,18 @@ export const authService = {
     return { accessToken }
   },
 
+  async logout(refreshToken: string, userId: number, companyId: number) {
+    const stored = await authRepository.getRefreshToken(refreshToken)
+
+    if (!stored || stored.user_id !== userId || stored.company_id !== companyId) {
+      throw new AppError('Invalid refresh token', 401)
+    }
+
+    await authRepository.revokeRefreshToken(refreshToken, userId, companyId)
+
+    logger.info('User logged out', { userId, companyId })
+  },
+
   async getAccess(userId: number, companyId: number) {
     const permissions = await authRepository.getUserPermissions(userId, companyId)
     return { permissions }

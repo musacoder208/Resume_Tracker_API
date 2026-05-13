@@ -5,3 +5,4 @@ coverage
 *.log
 uploads/*
 !uploads/.gitkeep
+*.xlsx

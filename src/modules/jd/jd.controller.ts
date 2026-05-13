@@ -223,6 +223,23 @@ export const jdController = {
     }
   },
 
+  async deleteJd(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const jdId = Number(req.params.jd_id)
+      const userId = req.userId!
+
+      const result = await jdService.deleteJd({ jdId, userId })
+
+      res.status(200).json({
+        success: result.deleted,
+        message: result.message,
+        data: null,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async updateTheory(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const { jd_id, edit_command } = req.body

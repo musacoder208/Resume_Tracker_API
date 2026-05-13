@@ -12,6 +12,7 @@ router.post('/generateWeightage', authMiddleware, validate(generateWeightageSche
 router.put('/updateWeightage', authMiddleware, validate(updateWeightageSchema), jdController.updateWeightage)
 router.get('/getAllJDs', authMiddleware, validateQuery(getAllJdsSchema), jdController.getAllJDs)
 router.get('/getJdDetailsById/:jd_id', authMiddleware, validateParams(jdByIdSchema), jdController.getJdDetailsById)
+router.delete('/deleteJd/:jd_id', authMiddleware, validateParams(jdByIdSchema), jdController.deleteJd)
 router.post('/update_theory', authMiddleware, validate(updateTheorySchema), jdController.updateTheory)
 router.post('/edit_qa', authMiddleware, validate(editQaSchema), jdController.editQa)
 router.post('/update_qa', authMiddleware, validate(updateQaSchema), jdController.updateQa)

@@ -280,6 +280,16 @@ export const jdService = {
     return { weightageId, capabilities: capabilitiesArray }
   },
 
+  async deleteJd(params: { jdId: number; userId: number }): Promise<{ deleted: boolean; message: string }> {
+    const deleted = await jdRepository.deleteJd(params)
+    if (!deleted) {
+      logger.info('JD delete blocked — used by candidate', { jdId: params.jdId })
+      return { deleted: false, message: 'Not deleted, because already used for candidate.' }
+    }
+    logger.info('JD deleted', { jdId: params.jdId })
+    return { deleted: true, message: 'JD deleted successfully.' }
+  },
+
   async getAllJDs(companyId: number, jobTitleId?: number, seniorityId?: number) {
     const list = await jdRepository.getAllJDs({ companyId, jobTitleId, seniorityId })
     logger.info('JD list fetched', { companyId, count: list.length })

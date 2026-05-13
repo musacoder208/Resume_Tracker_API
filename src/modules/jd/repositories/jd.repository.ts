@@ -151,6 +151,20 @@ export const jdRepository = {
     }
   },
 
+  async deleteJd(params: { jdId: number; userId: number }): Promise<boolean> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_delete_jd($1, $2) AS deleted',
+        [params.jdId, params.userId]
+      )
+      return result.rows[0]?.deleted as boolean
+    } catch (error) {
+      const msg = (error as Error).message
+      logger.error('DB error in deleteJd', { message: msg, error })
+      throw new AppError(`Database error: ${msg}`, 500)
+    }
+  },
+
   async updateJdTheory(params: {
     jdId: number
     renderedText: string
