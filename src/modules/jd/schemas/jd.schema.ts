@@ -42,6 +42,8 @@ export const editQaSchema = z.object({
   jd_id: z.number().int().positive('jd_id must be a positive integer'),
   field_key: z.string().min(1, 'field_key is required'),
   answer: z.string().min(1, 'answer is required'),
+  field_values: z.record(z.unknown()).default({}),
+  field_progress: z.record(z.unknown()).default({}),
 })
 
 export const updateQaSchema = z.object({

@@ -97,7 +97,7 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_add_update_jd(
   p_session_id   VARCHAR,
   p_field_key    VARCHAR,
   p_question_text VARCHAR,
-  p_answer_value JSONB,
+  p_answer_value TEXT[],
   p_qa_history   JSONB,
   p_jd_theory    TEXT,
   p_user_id      INT,
@@ -414,18 +414,21 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_get_jd_details_by_id(
   p_jd_id INT
 )
 RETURNS TABLE (
-  jd_id           INT,
-  session_id      VARCHAR,
-  status_name     VARCHAR,
-  field_key       VARCHAR,
-  question_text   TEXT,
-  answer_value    VARCHAR,
-  mode            VARCHAR,
-  jd_theory       TEXT,
-  field_values    JSONB,
-  field_progress  JSONB,
-  question_counts JSONB,
-  weightage_json  JSONB
+  jd_id            INT,
+  session_id       VARCHAR,
+  status_name      VARCHAR,
+  field_key        VARCHAR,
+  question_text    TEXT,
+  answer_value     TEXT[],
+  mode             VARCHAR,
+  jd_theory        TEXT,
+  field_values     JSONB,
+  field_progress   JSONB,
+  question_counts  JSONB,
+  weightage_json   JSONB,
+  next_question    JSONB,
+  session_data     JSONB,
+  org_dna_snapshot JSONB
 )
 LANGUAGE plpgsql
 AS $$
@@ -441,20 +444,23 @@ BEGIN
 
   RETURN QUERY
   SELECT
-    p_jd_id                                                         AS jd_id,
+    p_jd_id                                                              AS jd_id,
     h.session_id,
-    v_status_name                                                   AS status_name,
+    v_status_name                                                        AS status_name,
     qa.field_key,
     qa.question_text::TEXT,
-    qa.answer_value::VARCHAR,
+    qa.answer_value,
     qa.mode,
     CASE WHEN v_status_name = 'Completed' THEN d.jd_theory
          ELSE NULL
-    END                                                             AS jd_theory,
-    (d.qa_history -> 'field_values')                               AS field_values,
-    (d.qa_history -> 'field_progress')                             AS field_progress,
-    (d.qa_history -> 'question_counts')                            AS question_counts,
-    (w.weightage_json -> 'weights')                                AS weightage_json
+    END                                                                  AS jd_theory,
+    (d.qa_history -> 'data' -> 'field_values')                          AS field_values,
+    (d.qa_history -> 'data' -> 'field_progress')                        AS field_progress,
+    (d.qa_history -> 'data' -> 'question_counts')                       AS question_counts,
+    (w.weightage_json -> 'weights')                                      AS weightage_json,
+    (d.qa_history -> 'next_question')                                    AS next_question,
+    (d.qa_history -> 'data')                                             AS session_data,
+    (d.qa_history -> 'data' -> 'org_dna_snapshot')                      AS org_dna_snapshot
   FROM mechsoft.tbl_jd_qa qa
   INNER JOIN mechsoft.tbl_jd_header h
           ON h.jd_id      = qa.jd_id
@@ -480,7 +486,7 @@ $$;
 CREATE OR REPLACE FUNCTION mechsoft.fn_edit_jd_qa_answer(
   p_jd_id      INT,
   p_field_key  VARCHAR,
-  p_new_answer TEXT,
+  p_new_answer TEXT[],
   p_user_id    INT
 )
 RETURNS VOID

@@ -2,6 +2,18 @@ import type { Response, NextFunction } from 'express'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
 import { companyProfileService } from './services/companyProfile.service'
+import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
+
+// Main QA session state — one active profile creation session at a time
+let tempSessionId: string | null = null
+let tempNextQuestion: QANextQuestion | null = null
+let tempData: QADataBlob | null = null
+
+function clearTempState(): void {
+  tempSessionId = null
+  tempNextQuestion = null
+  tempData = null
+}
 
 // Edit QA session state — one active edit session at a time
 let tempEditUpdateContext: Record<string, unknown> | null = null
@@ -18,8 +30,20 @@ export const companyProfileController = {
       const { userId, tenantId } = req
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
-      const result = await companyProfileService.startProfile(userId, tenantId)
-      res.status(200).json({ success: true, message: 'Profile session started', data: result })
+      const { sessionId, nextQuestion, data } = await companyProfileService.startProfile(userId, tenantId)
+
+      tempSessionId = sessionId
+      tempNextQuestion = nextQuestion
+      tempData = data
+
+      res.status(200).json({
+        success: true,
+        message: 'Profile session started',
+        data: {
+          session_id: tempSessionId,
+          next_question: tempNextQuestion,
+        },
+      })
     } catch (error) {
       next(error)
     }
@@ -30,9 +54,39 @@ export const companyProfileController = {
       const { userId, tenantId } = req
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
-      const result = await companyProfileService.submitAnswer(req.body.answer as string, userId, tenantId)
-      const message = result.completed ? 'Profile completed successfully' : 'Answer submitted'
-      res.status(200).json({ success: true, message, data: result })
+      if (!tempSessionId || !tempNextQuestion || !tempData) {
+        throw new AppError('No active profile session. Call POST /start first.', 400)
+      }
+
+      const result = await companyProfileService.submitAnswer({
+        answer: req.body.answer as string,
+        userId,
+        tenantId,
+        sessionId: tempSessionId,
+        nextQuestion: tempNextQuestion,
+        data: tempData,
+      })
+
+      if (result.isCompleted) {
+        clearTempState()
+        res.status(200).json({
+          success: true,
+          message: 'Profile completed successfully',
+          data: null,
+        })
+        return
+      }
+
+      tempNextQuestion = result.nextQuestion!
+      tempData = result.data!
+
+      res.status(200).json({
+        success: true,
+        message: 'Answer submitted',
+        data: {
+          next_question: tempNextQuestion,
+        },
+      })
     } catch (error) {
       next(error)
     }

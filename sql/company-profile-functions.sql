@@ -303,7 +303,7 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_upsert_profile_qa(
     p_company_id    INT,
     p_field_key     VARCHAR,
     p_question_text VARCHAR,
-    p_answer_value  JSONB,
+    p_answer_value  TEXT[],
     p_created_by    INT,
     p_modified_by   INT,
     p_mode          VARCHAR DEFAULT NULL
@@ -453,16 +453,16 @@ AS $$
 DECLARE
     v_change     JSONB;
     v_qa_id      INT;
-    v_old_answer JSONB;
+    v_old_answer TEXT[];
     v_field_key  VARCHAR;
-    v_new_answer JSONB;
+    v_new_answer TEXT[];
     v_result     JSON;
 BEGIN
     FOR v_change IN
         SELECT value FROM jsonb_array_elements(p_changes)
     LOOP
         v_field_key  := v_change->>'field_key';
-        v_new_answer := v_change->'after';
+        v_new_answer := ARRAY[v_change->'after'->>'value'];
 
         SELECT id, answer_value
         INTO   v_qa_id, v_old_answer
@@ -553,12 +553,12 @@ DECLARE
     v_status_id    INT;
     v_session_id   INT;
     v_qa_id        INT;
-    v_old_answer   JSONB;
+    v_old_answer   TEXT[];
     v_field        TEXT;
     v_field_data   JSONB;
     v_change       JSONB;
     v_change_field VARCHAR;
-    v_change_after JSONB;
+    v_change_after TEXT[];
 BEGIN
     -- ── 1. Resolve status_id ('Company Profile' / 'Approved') ────────────────
     SELECT s.status_id INTO v_status_id
@@ -610,7 +610,7 @@ BEGIN
                 WHERE  id = v_qa_id;
 
                 -- Only audit + update if answer actually changed
-                IF v_old_answer IS DISTINCT FROM JSONB_BUILD_OBJECT('value', v_field_data->'raw_answer') THEN
+                IF v_old_answer IS DISTINCT FROM ARRAY[COALESCE(v_field_data->>'raw_answer', '')] THEN
 
                     -- Insert old answer into audit
                     INSERT INTO mechsoft.tbl_profile_qa_audit (
@@ -627,7 +627,7 @@ BEGIN
                     -- Update QA record with new answer (keep existing mode)
                     UPDATE mechsoft.tbl_profile_qa
                     SET    question_text  = COALESCE(v_field_data->>'question', ''),
-                           answer_value   = JSONB_BUILD_OBJECT('value', v_field_data->'raw_answer'),
+                           answer_value   = ARRAY[COALESCE(v_field_data->>'raw_answer', '')],
                            modified_by    = p_modified_by,
                            modified_date  = NOW()
                     WHERE  company_id = p_company_id
@@ -644,7 +644,7 @@ BEGIN
                     p_company_id,
                     v_field,
                     COALESCE(v_field_data->>'question', ''),
-                    JSONB_BUILD_OBJECT('value', v_field_data->'raw_answer'),
+                    ARRAY[COALESCE(v_field_data->>'raw_answer', '')],
                     'initial',
                     FALSE, p_created_by, NOW(), NULL, NULL
                 );
@@ -666,7 +666,7 @@ BEGIN
     IF p_changes IS NOT NULL THEN
         FOR v_change IN SELECT value FROM jsonb_array_elements(p_changes) LOOP
             v_change_field := v_change->>'field_key';
-            v_change_after := v_change->'after';
+            v_change_after := ARRAY[v_change->'after'->>'value'];
 
             SELECT id INTO v_qa_id
             FROM   mechsoft.tbl_profile_qa
@@ -749,7 +749,7 @@ $$;
 CREATE OR REPLACE FUNCTION mechsoft.fn_resolve_conflict_qa(
     p_company_id   INT,
     p_field_key    VARCHAR,
-    p_answer_value JSONB,
+    p_answer_value TEXT[],
     p_modified_by  INT
 )
 RETURNS VOID

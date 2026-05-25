@@ -1,99 +1,21 @@
 import axios from 'axios'
+import http from 'http'
+import https from 'https'
 import { env } from '@shared/config/env'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
+import type { QAStartRequest, QAAnswerRequest, QAResponse } from '@shared/types/qa.types'
 
 const AI_BASE = env.AI_SERVICE_URL
 
-// ─── Shared sub-types ────────────────────────────────────────────────────────
+const httpClient = axios.create({
+  httpAgent: new http.Agent({ keepAlive: false }),
+  httpsAgent: new https.Agent({ keepAlive: false }),
+})
 
-export interface AIQuestionMeta {
-  answer_type: string
-  allowed_values: string[] | null
-}
-
-export interface AINextQuestion {
-  text: string
-  field_meta: AIQuestionMeta
-}
-
-export interface AIAttemptCounters {
-  question_count_by_field: Record<string, unknown>
-  exhausted_fields: Record<string, unknown>
-  current_phase: string
-  closing_question_asked: boolean
-  closing_answer_captured: boolean
-}
-
-export interface AIQuestionContext {
-  org_id: string
-  interaction_id: string
-  field_key: string
-  question_type: string
-  question_text: string
-}
-
-export interface AIState {
-  signal_context: Record<string, unknown>
-  org_dna_context: {
-    org_id: string
-    org_dna_snapshot: Record<string, OrgDnaField>
-  }
-  evidence_context: Record<string, unknown>
-  conflict_context: Record<string, unknown>
-  question_context: AIQuestionContext
-  attempt_counters: AIAttemptCounters
-}
-
-export interface OrgDnaField {
-  value: unknown
-  resolved_values: unknown[] | null
-  confidence: number
-  state: string
-  question: string | null
-  raw_answer: unknown
-  [key: string]: unknown
-}
-
-// ─── /start ──────────────────────────────────────────────────────────────────
-
-export interface StartResponse {
-  success: boolean
-  completed: boolean
-  session_id: string
-  next_question: AINextQuestion
-  state: AIState
-}
-
-// ─── /answer ─────────────────────────────────────────────────────────────────
-// CRITICAL: state fields are spread as TOP-LEVEL keys — NOT nested under "state"
-
-export interface AnswerRequest {
-  session_id: string
-  org_id: string
-  user_id: string
-  field_key: string
-  answer: string
-  signal_context: Record<string, unknown>
-  org_dna_context: Record<string, unknown>
-  evidence_context: Record<string, unknown>
-  conflict_context: Record<string, unknown>
-  question_context: Record<string, unknown>
-  attempt_counters: Record<string, unknown>
-}
-
-export interface ResolvedConflict {
-  conflict_id: string
-  [fieldKey: string]: unknown  // dynamic field_key: answer_value
-}
-
-export interface AnswerResponse {
-  success: boolean
-  completed: boolean
-  next_question: AINextQuestion | null
-  state: AIState
-  resolved_conflict_ids?: ResolvedConflict[] | null
-}
+// Profile uses the standard QAResponse shape.
+// resolved_conflict_ids lives inside data.conflict_context, not at the top level.
+export type ProfileQAResponse = QAResponse
 
 // ─── /update-field/start ─────────────────────────────────────────────────────
 
@@ -126,57 +48,59 @@ export interface UpdateRespondResponse {
 
 // ─── /finalize ───────────────────────────────────────────────────────────────
 
-export interface FinalizeRequest {
-  org_id: string
-  org_dna_snapshot: Record<string, unknown>
-}
-
 export interface FinalizeResponse {
   success: boolean
-  theory: unknown
+  rendered_text: string
 }
 
 // ─── Client ──────────────────────────────────────────────────────────────────
 
 export const aiClient = {
-  // POST /start — initialise a new Q&A session; no DB save happens here
-  async startSession(orgId: number, userId: number): Promise<StartResponse> {
+  // POST /api/org-dna/start
+  async startSession(orgId: number, userId: number): Promise<ProfileQAResponse> {
+    const body: QAStartRequest = {
+      id: '1',
+      org_id: String(orgId),
+      user_id: String(userId),
+      session_id: '',
+      question_id: '',
+      data: { org_dna_snapshot: {} },
+    }
     try {
-      const response = await axios.post<StartResponse>(`${AI_BASE}/start`, {
-        org_id: String(orgId),
-        user_id: String(userId),
-        org_dna_context: {},
-        evidence_context: {},
-        conflict_context: {},
-        attempt_counters: {},
-      })
-      logger.info('AI /start session initiated', { orgId, userId })
+      const response = await httpClient.post<ProfileQAResponse>(
+        `${AI_BASE}/api/org-dna/start`,
+        body
+      )
+      logger.info('AI /org-dna/start called', { orgId, userId })
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('RAW AI ERROR /start:', error.response?.status, JSON.stringify(error.response?.data))
+        console.error('RAW AI ERROR /org-dna/start:', error.response?.status, JSON.stringify(error.response?.data))
       }
-      logger.error('AI /start failed', { error })
+      logger.error('AI /org-dna/start failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
   },
 
-  // POST /answer — state fields are passed spread at top level by the service
-  async submitAnswer(body: AnswerRequest): Promise<AnswerResponse> {
+  // POST /api/org-dna/answer
+  async submitAnswer(body: QAAnswerRequest): Promise<ProfileQAResponse> {
     try {
-      const response = await axios.post<AnswerResponse>(`${AI_BASE}/answer`, body)
-      logger.info('AI /answer received', { fieldKey: body.field_key })
+      const response = await httpClient.post<ProfileQAResponse>(
+        `${AI_BASE}/api/org-dna/answer`,
+        body
+      )
+      logger.info('AI /org-dna/answer submitted', { fieldKey: body.field_key })
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('RAW AI ERROR /answer:', error.response?.status, JSON.stringify(error.response?.data))
+        console.error('RAW AI ERROR /org-dna/answer:', error.response?.status, JSON.stringify(error.response?.data))
       }
-      logger.error('AI /answer failed', { error })
+      logger.error('AI /org-dna/answer failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
   },
 
-  // POST /update-field/start — org_dna_context comes from saved DB context_data
+  // POST /update-field/start
   async startUpdate(
     orgId: number,
     userId: number,
@@ -184,26 +108,28 @@ export const aiClient = {
     orgDnaContext: Record<string, unknown>
   ): Promise<UpdateStartResponse> {
     try {
-      const response = await axios.post<UpdateStartResponse>(`${AI_BASE}/update-field/start`, {
-        org_id: String(orgId),
-        user_id: String(userId),
-        field_key: fieldKey,
-        org_dna_context: orgDnaContext,
-        skip_question: true,
-      })
-      logger.info('AI /update-field/start received', { fieldKey })
+      const response = await httpClient.post<UpdateStartResponse>(
+        `${AI_BASE}/api/org-dna/update-field/start`,
+        {
+          org_id: String(orgId),
+          user_id: String(userId),
+          field_key: fieldKey,
+          org_dna_context: orgDnaContext,
+          skip_question: true,
+        }
+      )
+      logger.info('AI /org-dna/update-field/start called', { fieldKey })
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('RAW AI ERROR /update-field/start:', error.response?.status, JSON.stringify(error.response?.data))
+        console.error('RAW AI ERROR /org-dna/update-field/start:', error.response?.status, JSON.stringify(error.response?.data))
       }
-      logger.error('AI /update-field/start failed', { error })
+      logger.error('AI /org-dna/update-field/start failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
   },
 
   // POST /update-field/respond
-  // action: "answer" during normal steps | "confirm" at final_confirm | "cancel" to abort
   async respondToUpdate(
     userId: number,
     updateContext: Record<string, unknown>,
@@ -211,37 +137,35 @@ export const aiClient = {
     answer: string
   ): Promise<UpdateRespondResponse> {
     try {
-      const response = await axios.post<UpdateRespondResponse>(`${AI_BASE}/update-field/respond`, {
-        user_id: String(userId),
-        update_context: updateContext,
-        action,
-        answer,
-      })
-      logger.info('AI /update-field/respond received', { action })
+      const response = await httpClient.post<UpdateRespondResponse>(
+        `${AI_BASE}/api/org-dna/update-field/respond`,
+        { user_id: String(userId), update_context: updateContext, action, answer }
+      )
+      logger.info('AI /org-dna/update-field/respond called', { action })
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('RAW AI ERROR /update-field/respond:', error.response?.status, JSON.stringify(error.response?.data))
+        console.error('RAW AI ERROR /org-dna/update-field/respond:', error.response?.status, JSON.stringify(error.response?.data))
       }
-      logger.error('AI /update-field/respond failed', { error })
+      logger.error('AI /org-dna/update-field/respond failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
   },
 
-  // POST /finalize — generate theory after Q&A completes or a field is updated
+  // POST /finalize
   async finalizeProfile(orgId: number, orgDnaSnapshot: Record<string, unknown>): Promise<FinalizeResponse> {
     try {
-      const response = await axios.post<FinalizeResponse>(`${AI_BASE}/finalize`, {
-        org_id: String(orgId),
-        org_dna_snapshot: orgDnaSnapshot,
-      })
-      logger.info('AI /finalize received', { orgId })
+      const response = await httpClient.post<FinalizeResponse>(
+        `${AI_BASE}/api/org-dna/finalize`,
+        { id: String(orgId), data: orgDnaSnapshot }
+      )
+      logger.info('AI /org-dna/finalize called', { orgId })
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('RAW AI ERROR /finalize:', error.response?.status, JSON.stringify(error.response?.data))
+        console.error('RAW AI ERROR /org-dna/finalize:', error.response?.status, JSON.stringify(error.response?.data))
       }
-      logger.error('AI /finalize failed', { error })
+      logger.error('AI /org-dna/finalize failed', { error })
       throw new AppError('AI service unavailable', 503)
     }
   },

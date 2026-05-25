@@ -163,19 +163,30 @@ export const companyProfileRepository = {
     companyId: number,
     fieldKey: string,
     questionText: string,
-    answerValue: Record<string, unknown>,
+    answerValue: string[],
     createdBy: number,
     modifiedBy: number,
     mode: string | null = null
   ) {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_upsert_profile_qa($1, $2, $3, $4::jsonb, $5, $6, $7) AS qa',
-        [companyId, fieldKey, questionText, JSON.stringify(answerValue), createdBy, modifiedBy, mode]
+        'SELECT mechsoft.fn_upsert_profile_qa($1, $2, $3, $4::text[], $5, $6, $7) AS qa',
+        [companyId, fieldKey, questionText, answerValue, createdBy, modifiedBy, mode]
       )
       return result.rows[0]?.qa ?? null
     } catch (error) {
-      console.error('RAW DB ERROR upsertProfileQA:', (error as Error).message)
+      const e = error as any
+      console.error('=== upsertProfileQA DB ERROR ===')
+      console.error('message  :', e.message)
+      console.error('pg code  :', e.code)
+      console.error('detail   :', e.detail)
+      console.error('hint     :', e.hint)
+      console.error('where    :', e.where)
+      console.error('constraint:', e.constraint)
+      console.error('column   :', e.column)
+      console.error('dataType :', e.dataType)
+      console.error('params   :', { companyId, fieldKey, answerValue, mode, createdBy, modifiedBy })
+      console.error('================================')
       logger.error('DB error in upsertProfileQA', { error })
       throw new AppError('Database error', 500)
     }
@@ -294,13 +305,13 @@ export const companyProfileRepository = {
   async resolveConflictQA(
     companyId: number,
     fieldKey: string,
-    answerValue: Record<string, unknown>,
+    answerValue: string[],
     modifiedBy: number
   ) {
     try {
       await pool.query(
-        'SELECT mechsoft.fn_resolve_conflict_qa($1, $2, $3::jsonb, $4)',
-        [companyId, fieldKey, JSON.stringify(answerValue), modifiedBy]
+        'SELECT mechsoft.fn_resolve_conflict_qa($1, $2, $3::text[], $4)',
+        [companyId, fieldKey, answerValue, modifiedBy]
       )
     } catch (error) {
       console.error('RAW DB ERROR resolveConflictQA:', (error as Error).message)

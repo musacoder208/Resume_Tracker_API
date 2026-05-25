@@ -26,7 +26,7 @@ export const jdRepository = {
     sessionId: string
     fieldKey: string
     questionText: string
-    answerValue: string
+    answerValue: string[]
     qaHistory: Record<string, unknown>
     jdTheory: string | null
     userId: number
@@ -36,7 +36,7 @@ export const jdRepository = {
       const result = await pool.query(
         `SELECT mechsoft.fn_add_update_jd(
           $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10::jsonb, $11::jsonb, $12, $13, $14
+          $10::text[], $11::jsonb, $12, $13, $14
         ) AS jd_id`,
         [
           params.jdId,
@@ -48,7 +48,7 @@ export const jdRepository = {
           params.sessionId,
           params.fieldKey,
           params.questionText,
-          JSON.stringify(params.answerValue),
+          params.answerValue,
           JSON.stringify(params.qaHistory),
           params.jdTheory,
           params.userId,
@@ -83,12 +83,15 @@ export const jdRepository = {
     jdId: number
     statusName: string
     jdTheory: string | null
-    qa: { fieldKey: string; questionText: string; answerValue: string; mode: string | null }[]
+    qa: { fieldKey: string; questionText: string; answerValue: string[]; mode: string | null }[]
     sessionId: string
     fieldValues: Record<string, unknown> | null
     fieldProgress: Record<string, unknown> | null
     questionCounts: Record<string, unknown> | null
     weightageJson: Record<string, unknown> | null
+    nextQuestion: import('@shared/types/qa.types').QANextQuestion | null
+    sessionData: import('@shared/types/qa.types').QADataBlob | null
+    orgDnaSnapshot: Record<string, unknown> | null
   } | null> {
     try {
       const result = await pool.query(
@@ -107,10 +110,13 @@ export const jdRepository = {
         fieldProgress: first.field_progress as Record<string, unknown> | null,
         questionCounts: first.question_counts as Record<string, unknown> | null,
         weightageJson: first.weightage_json as Record<string, unknown> | null,
+        nextQuestion: first.next_question ?? null,
+        sessionData: first.session_data ?? null,
+        orgDnaSnapshot: first.org_dna_snapshot as Record<string, unknown> | null,
         qa: result.rows.map((r) => ({
           fieldKey: r.field_key as string,
           questionText: r.question_text as string,
-          answerValue: r.answer_value as string,
+          answerValue: r.answer_value as string[],
           mode: r.mode as string | null,
         })),
       }
@@ -193,12 +199,12 @@ export const jdRepository = {
   async editJdQaAnswer(params: {
     jdId: number
     fieldKey: string
-    newAnswer: string
+    newAnswer: string[]
     userId: number
   }): Promise<void> {
     try {
       await pool.query(
-        'SELECT mechsoft.fn_edit_jd_qa_answer($1, $2, $3, $4)',
+        'SELECT mechsoft.fn_edit_jd_qa_answer($1, $2, $3::text[], $4)',
         [params.jdId, params.fieldKey, params.newAnswer, params.userId]
       )
     } catch (error) {

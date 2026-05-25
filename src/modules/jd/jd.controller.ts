@@ -3,28 +3,19 @@ import { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
 import { GetAllJdsDto } from './schemas/jd.schema'
 import { jdService } from './services/jd.service'
+import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
 
 // Module-level session state — one active JD creation session at a time
 let tempSessionId: string | null = null
 let tempJdId: number | null = null
-let tempQuestionId: string | null = null
-let tempQuestionText: string | null = null
-let tempFieldKey: string | null = null
-let tempType: string | null = null
-let tempMode: string | null = null
-let tempCanBeSkipped: boolean | null = null
-let tempAllowedValues: string[] | null = null
+let tempNextQuestion: QANextQuestion | null = null
+let tempData: QADataBlob | null = null
 
 function clearTempState(): void {
   tempSessionId = null
   tempJdId = null
-  tempQuestionId = null
-  tempQuestionText = null
-  tempFieldKey = null
-  tempType = null
-  tempMode = null
-  tempCanBeSkipped = null
-  tempAllowedValues = null
+  tempNextQuestion = null
+  tempData = null
 }
 
 // Edit QA session state — one active QA edit session at a time
@@ -43,33 +34,36 @@ export const jdController = {
     try {
       const companyId = req.tenantId!
       const userId = req.userId!
+      const { jd_id, session_id, question_id, field_values, field_progress, org_dna_snapshot } = req.body
 
-      const { sessionId, question } = await jdService.startJdSession(companyId, userId)
+      const isResume = !!jd_id
+
+      const { sessionId, nextQuestion, data } = await jdService.startJdSession(
+        companyId,
+        userId,
+        isResume
+          ? {
+              jdId: jd_id,
+              sessionId: session_id ?? '',
+              questionId: question_id ?? '',
+              fieldValues: field_values ?? {},
+              fieldProgress: field_progress ?? {},
+              orgDnaSnapshot: org_dna_snapshot ?? {},
+            }
+          : undefined
+      )
 
       tempSessionId = sessionId
       tempJdId = null
-      tempQuestionId = question.question_id
-      tempQuestionText = question.question_text
-      tempFieldKey = question.field_key
-      tempType = question.type
-      tempMode = question.mode
-      tempCanBeSkipped = question.can_be_skipped
-      tempAllowedValues = question.allowed_values
+      tempNextQuestion = nextQuestion
+      tempData = data
 
       res.status(200).json({
         success: true,
         message: 'JD session started',
         data: {
           session_id: tempSessionId,
-          question: {
-            question_id: tempQuestionId,
-            question_text: tempQuestionText,
-            field_key: tempFieldKey,
-            type: tempType,
-            mode: tempMode,
-            can_be_skipped: tempCanBeSkipped,
-            allowed_values: tempAllowedValues,
-          },
+          next_question: tempNextQuestion,
         },
       })
     } catch (error) {
@@ -79,7 +73,7 @@ export const jdController = {
 
   async questionsAnswer(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      if (!tempSessionId || !tempQuestionId || !tempFieldKey || !tempQuestionText || !tempType) {
+      if (!tempSessionId || !tempNextQuestion || !tempData) {
         throw new AppError('No active JD session. Call POST /api/jd/start_id first.', 400)
       }
 
@@ -94,12 +88,9 @@ export const jdController = {
         companyId,
         userId,
         sessionId: tempSessionId,
-        questionId: tempQuestionId,
-        questionText: tempQuestionText,
-        fieldKey: tempFieldKey,
-        type: tempType,
+        nextQuestion: tempNextQuestion,
+        data: tempData,
         jdId: tempJdId,
-        mode: tempMode,
       })
 
       tempJdId = result.jdId
@@ -116,28 +107,14 @@ export const jdController = {
         return
       }
 
-      const nextQuestion = result.nextQuestion!
-      tempQuestionId = nextQuestion.question_id
-      tempQuestionText = nextQuestion.question_text
-      tempFieldKey = nextQuestion.field_key
-      tempType = nextQuestion.type
-      tempMode = nextQuestion.mode
-      tempCanBeSkipped = nextQuestion.can_be_skipped
-      tempAllowedValues = nextQuestion.allowed_values
+      tempNextQuestion = result.nextQuestion!
+      tempData = result.data!
 
       res.status(200).json({
         success: true,
         message: 'Answer recorded',
         data: {
-          question: {
-            question_id: tempQuestionId,
-            question_text: tempQuestionText,
-            field_key: tempFieldKey,
-            type: tempType,
-            mode: tempMode,
-            can_be_skipped: tempCanBeSkipped,
-            allowed_values: tempAllowedValues,
-          },
+          next_question: tempNextQuestion,
         },
       })
     } catch (error) {
@@ -194,7 +171,15 @@ export const jdController = {
   async getJdDetailsById(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const jdId = Number(req.params.jd_id)
+
       const data = await jdService.getJdDetailsById(jdId)
+
+      if (data.sessionResumed) {
+        tempSessionId = data.sessionId
+        tempJdId = jdId
+        tempNextQuestion = data.nextQuestion
+        tempData = data.sessionData
+      }
 
       res.status(200).json({
         success: true,
@@ -263,7 +248,7 @@ export const jdController = {
 
   async editQa(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jd_id, field_key, answer } = req.body
+      const { jd_id, field_key, answer, field_values, field_progress } = req.body
       const companyId = req.tenantId!
       const userId = req.userId!
 
@@ -271,6 +256,8 @@ export const jdController = {
         jdId: jd_id,
         fieldKey: field_key,
         answer,
+        fieldValues: field_values,
+        fieldProgress: field_progress,
         companyId,
         userId,
       })

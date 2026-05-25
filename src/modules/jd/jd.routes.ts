@@ -6,7 +6,7 @@ import { jdController } from './jd.controller'
 
 const router = Router()
 
-router.post('/start_id', authMiddleware, jdController.startId)
+router.post('/start_jd', authMiddleware, jdController.startId)
 router.post('/questions_answer', authMiddleware, validate(answerJdSchema), jdController.questionsAnswer)
 router.post('/generateWeightage', authMiddleware, validate(generateWeightageSchema), jdController.generateWeightage)
 router.put('/updateWeightage', authMiddleware, validate(updateWeightageSchema), jdController.updateWeightage)

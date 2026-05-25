@@ -1,5 +1,6 @@
 import { jdRepository } from '../repositories/jd.repository'
-import { pythonClient, JdNextQuestionResponse, JdUpdateFieldRespondResponse, JdUpdateTextResponse } from '../clients/python.client'
+import { pythonClient, JdUpdateFieldRespondResponse, JdUpdateTextResponse } from '../clients/python.client'
+import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
 
@@ -88,26 +89,44 @@ async function getCompanyOrgDna(
 export const jdService = {
   async startJdSession(
     companyId: number,
-    userId: number
-  ): Promise<{ sessionId: string; question: JdNextQuestionResponse }> {
-    const preparedOrgDna = await getCompanyOrgDna(companyId)
+    userId: number,
+    resume?: {
+      jdId: number
+      sessionId: string
+      questionId: string
+      fieldValues: Record<string, unknown>
+      fieldProgress: Record<string, unknown>
+      orgDnaSnapshot: Record<string, unknown>
+    }
+  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob }> {
+    const preparedOrgDna = resume ? resume.orgDnaSnapshot : await getCompanyOrgDna(companyId)
 
-    const sessionResponse = await pythonClient.initSession({
-      org_id: String(companyId),
-      jd_id: '',
-      session_id: '',
-      org_dna_snapshot: preparedOrgDna,
-      field_progress: {},
-      field_values: {},
-      question_counts: {},
-      org_dna_override_annotations: {},
-    })
+    const response = await pythonClient.startJd(
+      resume
+        ? {
+            id: String(resume.jdId),
+            org_id: String(companyId),
+            user_id: String(userId),
+            session_id: resume.sessionId,
+            question_id: resume.questionId,
+            data: {
+              org_dna_snapshot: preparedOrgDna,
+              field_values: resume.fieldValues,
+              field_progress: resume.fieldProgress,
+            },
+          }
+        : {
+            id: '1',
+            org_id: String(companyId),
+            user_id: String(userId),
+            session_id: '',
+            question_id: '',
+            data: { org_dna_snapshot: preparedOrgDna },
+          }
+    )
 
-    const sessionId = sessionResponse.session_id
-    const question = await pythonClient.getNextQuestion(sessionId)
-
-    logger.info('JD session started', { companyId, sessionId, userId })
-    return { sessionId, question }
+    logger.info('JD session started', { companyId, sessionId: response.session_id, userId, resume: !!resume })
+    return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data }
   },
 
   async submitJdAnswer(params: {
@@ -117,30 +136,25 @@ export const jdService = {
     companyId: number
     userId: number
     sessionId: string
-    questionId: string
-    questionText: string
-    fieldKey: string
-    type: string
+    nextQuestion: QANextQuestion
+    data: QADataBlob
     jdId: number | null
-    mode: string | null
   }): Promise<{
     jdId: number
     isFinalized: boolean
-    nextQuestion?: JdNextQuestionResponse
+    nextQuestion?: QANextQuestion
+    data?: QADataBlob
   }> {
-    const { minExp, maxExp } = parseExperience(params.answer, params.fieldKey)
+    const { minExp, maxExp } = parseExperience(params.answer, params.nextQuestion.field_key)
 
-    const answerResponse = await pythonClient.submitAnswer({
+    const answerResponse = await pythonClient.answerJd({
       session_id: params.sessionId,
-      question_id: params.questionId,
-      answer_payload: params.answer,
+      user_id: String(params.userId),
+      field_key: params.nextQuestion.field_key,
+      answer: params.answer,
+      question_id: params.nextQuestion.question_id,
+      data: params.data,
     })
-
-    // For ORG_DNA_CONFIRMATION: use the confirmed answer from field_values[fieldKey]
-    const resolvedAnswerValue =
-      params.type === 'ORG_DNA_CONFIRMATION'
-        ? String(answerResponse.field_values?.[params.fieldKey] ?? params.answer)
-        : params.answer
 
     const jdId = await jdRepository.addUpdateJd({
       jdId: params.jdId,
@@ -150,27 +164,28 @@ export const jdService = {
       minExp,
       maxExp,
       sessionId: params.sessionId,
-      fieldKey: params.fieldKey,
-      questionText: params.questionText,
-      answerValue: resolvedAnswerValue,
-      qaHistory: answerResponse ?? {},
+      fieldKey: params.nextQuestion.field_key,
+      questionText: params.nextQuestion.text,
+      answerValue: [params.answer],
+      qaHistory: answerResponse as unknown as Record<string, unknown>,
       jdTheory: null,
       userId: params.userId,
-      mode: params.mode,
+      mode: params.nextQuestion.mode,
     })
 
-    if (params.type !== 'FINAL_QUESTION') {
-      const nextQuestion = await pythonClient.getNextQuestion(params.sessionId)
-      logger.info('JD answer submitted', { jdId, nextFieldKey: nextQuestion.field_key })
-      return { jdId, isFinalized: false, nextQuestion }
+    if (!answerResponse.completed) {
+      logger.info('JD answer submitted', { jdId, nextFieldKey: answerResponse.next_question?.field_key })
+      return { jdId, isFinalized: false, nextQuestion: answerResponse.next_question!, data: answerResponse.data }
     }
 
-    // FINAL_QUESTION — finalize the JD
+    // completed === true — JD creation finished
+    // TODO: confirm with Python dev whether rendered_text comes in data when completed
     const finalizeResponse = await pythonClient.finalizeJd({
-      jd_id: String(jdId),
-      field_values: answerResponse.field_values ?? {},
+      id: String(jdId),
+      data: {
+        field_values: answerResponse.data.field_values ?? {},
+      },
     })
-
     await jdRepository.finalizeJd({
       jdId,
       jdTheory: finalizeResponse.rendered_text,
@@ -183,11 +198,11 @@ export const jdService = {
 
   async getJdDetailsById(jdId: number) {
     const data = await jdRepository.getJdDetailsById(jdId)
-    if (!data) {
-      throw new AppError('JD not found', 404)
-    }
-    logger.info('JD details fetched', { jdId, status: data.statusName })
-    return data
+    if (!data) throw new AppError('JD not found', 404)
+
+    const sessionResumed = data.jdTheory === null && data.nextQuestion !== null
+    logger.info('JD details fetched', { jdId, status: data.statusName, sessionResumed })
+    return { ...data, sessionResumed }
   },
 
   async generateWeightage(params: {
@@ -336,6 +351,8 @@ export const jdService = {
     jdId: number
     fieldKey: string
     answer: string
+    fieldValues: Record<string, unknown>
+    fieldProgress: Record<string, unknown>
     companyId: number
     userId: number
   }): Promise<{
@@ -343,21 +360,18 @@ export const jdService = {
     step: string
     respondPayload: JdUpdateFieldRespondResponse
   }> {
-    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
-    if (!jdDetails) {
-      throw new AppError('JD not found', 404)
-    }
-
     const orgDna = await getCompanyOrgDna(params.companyId)
 
     const startResponse = await pythonClient.updateFieldStart({
+      id: String(params.jdId),
       org_id: String(params.companyId),
-      jd_id: String(params.jdId),
       user_id: String(params.userId),
       field_key: params.fieldKey,
-      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
-      field_progress: (jdDetails.fieldProgress as Record<string, unknown>) ?? {},
-      org_dna_snapshot: orgDna,
+      data: {
+        field_values: params.fieldValues,
+        field_progress: params.fieldProgress,
+        org_dna_snapshot: orgDna,
+      },
       skip_question: true,
     })
 
@@ -402,7 +416,7 @@ export const jdService = {
     if (respondResponse.completed) {
       const stateContext = respondResponse.state.update_context
       const fieldKey = stateContext?.target_field as string
-      const newAnswer = (stateContext as any)?.answers?.new_value as string
+      const newAnswer = [(stateContext as any)?.answers?.new_value as string]
 
       await jdRepository.editJdQaAnswer({
         jdId: params.jdId,

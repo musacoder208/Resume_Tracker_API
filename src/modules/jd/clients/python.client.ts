@@ -4,6 +4,7 @@ import https from 'https'
 import { env } from '@shared/config/env'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
+import type { QAStartRequest, QAAnswerRequest, QAResponse } from '@shared/types/qa.types'
 
 const PYTHON_BASE = env.PYTHON_API_URL
 
@@ -55,8 +56,10 @@ export interface JdAnswerResponse {
 }
 
 export interface JdFinalizeRequest {
-  jd_id: string
-  field_values: Record<string, unknown>
+  id: string
+  data: {
+    field_values: Record<string, unknown>
+  }
 }
 
 export interface JdFinalizeResponse {
@@ -137,13 +140,15 @@ export interface JdUpdateTextResponse {
 }
 
 export interface JdUpdateFieldStartRequest {
+  id: string
   org_id: string
-  jd_id: string
   user_id: string
   field_key: string
-  field_values: Record<string, unknown>
-  field_progress: Record<string, unknown>
-  org_dna_snapshot: Record<string, unknown>
+  data: {
+    field_values: Record<string, unknown>
+    field_progress: Record<string, unknown>
+    org_dna_snapshot: Record<string, unknown>
+  }
   skip_question: boolean
 }
 
@@ -183,43 +188,26 @@ export interface JdUpdateFieldRespondResponse {
 }
 
 export const pythonClient = {
-  async initSession(body: JdSessionInitRequest): Promise<JdSessionInitResponse> {
+  // ── QA flow ────────────────────────────────────────────────────────────────
+
+  async startJd(body: QAStartRequest): Promise<QAResponse> {
     try {
-      const response = await httpClient.post<JdSessionInitResponse>(
-        `${PYTHON_BASE}/api/jd/session/init`,
-        body
-      )
-      logger.info('Python JD /session/init called', { orgId: body.org_id })
+      const response = await httpClient.post<QAResponse>(`${PYTHON_BASE}/api/jd/start`, body)
+      logger.info('Python JD /start called', { orgId: body.org_id })
       return response.data
     } catch (error) {
-      logger.error('Python JD /session/init failed', { error })
+      logger.error('Python JD /start failed', { error })
       throw new AppError('Python service unavailable', 503)
     }
   },
 
-  async getNextQuestion(sessionId: string): Promise<JdNextQuestionResponse> {
+  async answerJd(body: QAAnswerRequest): Promise<QAResponse> {
     try {
-      const response = await httpClient.get<JdNextQuestionResponse>(
-        `${PYTHON_BASE}/api/jd/next-question`,
-        { params: { session_id: sessionId } }
-      )
-      logger.info('Python JD /next-question called', { sessionId })
-      return response.data
-    } catch (error) {
-      logger.error('Python JD /next-question failed', { error })
-      throw new AppError('Python service unavailable', 503)
-    }
-  },
-
-  async submitAnswer(body: JdAnswerRequest): Promise<JdAnswerResponse> {
-    try {
-      const response = await httpClient.post<JdAnswerResponse>(
-        `${PYTHON_BASE}/api/jd/answer`,
-        body
-      )
+      const response = await httpClient.post<QAResponse>(`${PYTHON_BASE}/api/jd/answer`, body)
       logger.info('Python JD /answer submitted', {
         sessionId: body.session_id,
         questionId: body.question_id,
+        fieldKey: body.field_key,
       })
       return response.data
     } catch (error) {
@@ -227,6 +215,22 @@ export const pythonClient = {
       throw new AppError('Python service unavailable', 503)
     }
   },
+
+  // ── Old QA methods — replaced by startJd / answerJd above ─────────────────
+  // async initSession(body: JdSessionInitRequest): Promise<JdSessionInitResponse> {
+  //   const response = await httpClient.post(`${PYTHON_BASE}/api/jd/session/init`, body)
+  //   return response.data
+  // },
+  //
+  // async getNextQuestion(sessionId: string): Promise<JdNextQuestionResponse> {
+  //   const response = await httpClient.get(`${PYTHON_BASE}/api/jd/next-question`, { params: { session_id: sessionId } })
+  //   return response.data
+  // },
+  //
+  // async submitAnswer(body: JdAnswerRequest): Promise<JdAnswerResponse> {
+  //   const response = await httpClient.post(`${PYTHON_BASE}/api/jd/answer`, body)
+  //   return response.data
+  // },
 
   async adjustWeights(body: JdAdjustWeightsRequest): Promise<JdAdjustWeightsResponse> {
     try {
@@ -276,7 +280,7 @@ export const pythonClient = {
         `${PYTHON_BASE}/api/jd/update-field/start`,
         body
       )
-      logger.info('Python JD /update-field/start called', { jdId: body.jd_id, fieldKey: body.field_key })
+      logger.info('Python JD /update-field/start called', { jdId: body.id, fieldKey: body.field_key })
       return response.data
     } catch (error) {
       logger.error('Python JD /update-field/start failed', { error })
@@ -304,9 +308,12 @@ export const pythonClient = {
         `${PYTHON_BASE}/api/jd/finalize`,
         body
       )
-      logger.info('Python JD /finalize called', { jdId: body.jd_id })
+      logger.info('Python JD /finalize called', { jdId: body.id })
       return response.data
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('RAW FINALIZE ERROR:', error.response?.status, JSON.stringify(error.response?.data))
+      }
       logger.error('Python JD /finalize failed', { error })
       throw new AppError('Python service unavailable', 503)
     }

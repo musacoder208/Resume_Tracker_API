@@ -270,7 +270,7 @@
 | company_id    | INT       | FK  | Unique Company Identifier            |
 | field_key     | VARCHAR   |     | Unique identifier (e.g., office_loc) |
 | question_text | TEXT      |     | The actual question AI will ask      |
-| answer_value  | JSONB     |     | User validated answer                |
+| answer_value  | TEXT[]    |     | User validated answer                |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false)    |
 | created_by    | INT       |     | User who created the record          |
 | created_date  | TIMESTAMP |     | Record creation timestamp            |
@@ -287,7 +287,7 @@
 | qa_id         | INT       | FK  | Unique Answer Identifier          |
 | company_id    | INT       | FK  | Unique Company Identifier         |
 | question_text | TEXT      |     | The actual question AI will ask   |
-| answer_value  | JSONB     |     | Old answer                        |
+| answer_value  | TEXT[]    |     | Old answer                        |
 | change_reason | VARCHAR   |     | AI's explanation for the change   |
 | is_deleted    | BOOLEAN   |     | Soft delete flag (default: false) |
 | created_by    | INT       |     | User who created the record       |
@@ -346,7 +346,7 @@
 | field_key     | VARCHAR   |                 |                                   |
 | question_text | VARCHAR   |                 |                                   |
 | answer_value  | VARCHAR   |                 |                                   |
-| mode          | VARCHAR   |                 |                                   |
+| mode          | TEXT[]   |                 |                                   |
 | is_deleted    | BOOLEAN   |                 | Soft delete flag (default: false) |
 | created_by    | INT       |                 | User who created the record       |
 | created_date  | TIMESTAMP |                 | Record creation timestamp         |
@@ -363,7 +363,7 @@
 | jd_id         | INT       | FK → tbl_jd_header |                                |
 | field_key     | VARCHAR   |                 |                                   |
 | question_text | VARCHAR   |                 |                                   |
-| answer_value  | VARCHAR   |                 |                                   |
+| answer_value  | TEXT[]    |                 |                                   |
 | mode          | VARCHAR   |                 |                                   |
 | is_deleted    | BOOLEAN   |                 | Soft delete flag (default: false) |
 | created_by    | INT       |                 | User who created the record       |
