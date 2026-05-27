@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '@shared/logger/logger';
 import { env } from '@shared/config/env';
-import type { ApiResponse, RequestWithUser } from '@shared/types/global.types';
+import { sendError } from '@shared/utils/response';
+import type { RequestWithUser } from '@shared/types/global.types';
 
 export class AppError extends Error {
   statusCode: number;
@@ -33,15 +34,11 @@ export function errorHandler(
     method: req.method,
   });
 
-  const response: ApiResponse<null> = {
-    success: false,
-    message: err instanceof AppError && err.isOperational ? err.message : 'Internal Server Error',
-    ...(traceId && { data: null, error: traceId }),
-  };
+  const message =
+    err instanceof AppError && err.isOperational ? err.message : 'Internal Server Error';
 
-  if (!isProduction && !(err instanceof AppError)) {
-    (response as ApiResponse<null> & { stack?: string }).stack = err.stack;
-  }
+  const code =
+    err instanceof AppError && err.isOperational ? 'ERROR' : 'INTERNAL_SERVER_ERROR';
 
-  res.status(statusCode).json(response);
+  sendError(res, { code, message, statusCode, requestId: traceId });
 }

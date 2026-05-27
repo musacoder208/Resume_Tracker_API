@@ -20,11 +20,17 @@ export interface RequestWithUser extends Request {
   traceId?: string;
 }
 
+export interface ApiMeta {
+  requestId: string;
+  timestamp: string;
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
+  code?: string;
   message: string;
   data?: T;
-  error?: string;
+  meta?: ApiMeta;
 }
 
 export interface PaginationQuery {

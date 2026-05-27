@@ -7,17 +7,16 @@ import type { RequestWithUser, AuthPayload } from '@shared/types/global.types';
 
 export function authMiddleware(req: RequestWithUser, _res: Response, next: NextFunction): void {
   try {
-    const authHeader = req.headers.authorization;
+    const token = req.cookies?.accessToken as string | undefined;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      logger.warn('Auth failed: missing or malformed Authorization header', {
+    if (!token) {
+      logger.warn('Auth failed: accessToken cookie missing', {
         traceId: req.traceId,
         path: req.path,
       });
       throw new AppError('Access token is required', 401);
     }
 
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
 
     req.user = decoded;
@@ -25,7 +24,6 @@ export function authMiddleware(req: RequestWithUser, _res: Response, next: NextF
     req.tenantId = decoded.tenantId;
     req.roleId = decoded.roleId;
 
-    console.log(req.user,'user details');
     next();
   } catch (err) {
     if (err instanceof AppError) {

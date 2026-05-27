@@ -1,7 +1,18 @@
 import type { Response, NextFunction } from 'express'
 import { authService } from './services/auth.service'
 import { AppError } from '@shared/middleware/errorHandler'
+import { sendSuccess } from '@shared/utils/response'
+import { env } from '@shared/config/env'
 import type { RequestWithUser } from '@shared/types/global.types'
+
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: env.COOKIE_SECURE,
+  sameSite: env.COOKIE_SAME_SITE as 'strict' | 'lax' | 'none',
+}
 
 export const authController = {
   async login(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
@@ -10,24 +21,60 @@ export const authController = {
       if (!companyId) {
         throw new AppError('Tenant not identified', 400)
       }
+
       const result = await authService.login(req.body, companyId)
-      res.status(200).json({
-        success: true,
+
+      res.cookie('accessToken', result.accessToken, {
+        ...cookieOptions,
+        maxAge: ACCESS_TOKEN_TTL_MS,
+      })
+
+      res.cookie('refreshToken', result.refreshToken, {
+        ...cookieOptions,
+        maxAge: REFRESH_TOKEN_TTL_MS,
+      })
+
+      sendSuccess(res, {
+        code: 'LOGIN_SUCCESS',
         message: 'Login successful',
-        data: result,
+        data: {
+          user: result.user,
+          page_access: result.page_access,
+          permissions: result.permissions,
+          sessionExpiresIn: result.sessionExpiresIn,
+        },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
     }
   },
 
-  async refreshToken(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  async session(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const result = await authService.refreshToken(req.body.refreshToken as string)
-      res.status(200).json({
-        success: true,
-        message: 'Token refreshed successfully',
-        data: result,
+      const refreshToken = req.cookies?.refreshToken as string | undefined
+
+      if (!refreshToken) {
+        throw new AppError('No active session', 401)
+      }
+
+      const result = await authService.refreshSession(refreshToken)
+
+      res.cookie('accessToken', result.accessToken, {
+        ...cookieOptions,
+        maxAge: ACCESS_TOKEN_TTL_MS,
+      })
+
+      sendSuccess(res, {
+        code: 'SESSION_REFRESHED',
+        message: 'Session refreshed successfully',
+        data: {
+          user: result.user,
+          page_access: result.page_access,
+          permissions: result.permissions,
+          sessionExpiresIn: result.sessionExpiresIn,
+        },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -41,10 +88,22 @@ export const authController = {
       if (!userId || !tenantId) {
         throw new AppError('Unauthorized', 401)
       }
-      await authService.logout(req.body.refreshToken as string, userId, tenantId)
-      res.status(200).json({
-        success: true,
-        message: 'Logged out successfully',
+
+      const refreshToken = req.cookies?.refreshToken as string | undefined
+      if (!refreshToken) {
+        throw new AppError('No active session', 401)
+      }
+
+      await authService.logout(refreshToken, userId, tenantId)
+
+      res.clearCookie('accessToken', cookieOptions)
+      res.clearCookie('refreshToken', cookieOptions)
+
+      sendSuccess(res, {
+        code: 'LOGOUT_SUCCESS',
+        message: 'Logout successful',
+        data: {},
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)

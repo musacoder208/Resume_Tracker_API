@@ -25,6 +25,12 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string(),
   DEFAULT_COMPANY_ID: z.coerce.number().default(1),
 
+  COOKIE_SECURE: z
+    .string()
+    .transform((v) => v === 'true')
+    .default('false'),
+  COOKIE_SAME_SITE: z.enum(['strict', 'lax', 'none']).default('strict'),
+
   AI_SERVICE_URL: z.string().url().default('http://127.0.0.1:8001'),
   PYTHON_API_URL: z.string().url().default('http://127.0.0.1:8002'),
   CANDIDATE_EXTRACT_API_URL: z.string().url().default('http://127.0.0.1:8005'),
