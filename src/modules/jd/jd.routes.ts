@@ -6,15 +6,17 @@ import { jdController } from './jd.controller'
 
 const router = Router()
 
-router.post('/start_jd', authMiddleware, jdController.startId)
-router.post('/questions_answer', authMiddleware, validate(answerJdSchema), jdController.questionsAnswer)
-router.post('/generateWeightage', authMiddleware, validate(generateWeightageSchema), jdController.generateWeightage)
-router.put('/updateWeightage', authMiddleware, validate(updateWeightageSchema), jdController.updateWeightage)
-router.get('/getAllJDs', authMiddleware, validateQuery(getAllJdsSchema), jdController.getAllJDs)
-router.get('/getJdDetailsById/:jd_id', authMiddleware, validateParams(jdByIdSchema), jdController.getJdDetailsById)
-router.delete('/deleteJd/:jd_id', authMiddleware, validateParams(jdByIdSchema), jdController.deleteJd)
-router.post('/update_theory', authMiddleware, validate(updateTheorySchema), jdController.updateTheory)
-router.post('/edit_qa', authMiddleware, validate(editQaSchema), jdController.editQa)
-router.post('/update_qa', authMiddleware, validate(updateQaSchema), jdController.updateQa)
+router.use(authMiddleware)
+
+router.post('/start_jd', jdController.startId)
+router.post('/questions_answer', validate(answerJdSchema), jdController.questionsAnswer)
+router.post('/generateWeightage', validate(generateWeightageSchema), jdController.generateWeightage)
+router.put('/updateWeightage', validate(updateWeightageSchema), jdController.updateWeightage)
+router.get('/getAllJDs', validateQuery(getAllJdsSchema), jdController.getAllJDs)
+router.get('/getJdDetailsById/:jd_id', validateParams(jdByIdSchema), jdController.getJdDetailsById)
+router.delete('/deleteJd/:jd_id', validateParams(jdByIdSchema), jdController.deleteJd)
+router.post('/update_theory', validate(updateTheorySchema), jdController.updateTheory)
+router.post('/edit_qa', validate(editQaSchema), jdController.editQa)
+router.post('/update_qa', validate(updateQaSchema), jdController.updateQa)
 
 export default router

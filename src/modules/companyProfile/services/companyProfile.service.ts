@@ -10,10 +10,11 @@ export const companyProfileService = {
   async startProfile(
     userId: number,
     tenantId: number
-  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob }> {
-    const response = await aiClient.startSession(tenantId, userId)
-    logger.info('Profile Q&A session started', { tenantId })
-    return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data }
+  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob; theory: string | null }> {
+    const { exists, data, theory } = await companyProfileRepository.checkProfileExists(tenantId)
+    const response = await aiClient.startSession(tenantId, userId, exists ? data : undefined)
+    logger.info('Profile Q&A session started', { tenantId, resumed: exists })
+    return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data, theory: theory ?? null }
   },
 
   // ─── POST /answer ─────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ export const companyProfileService = {
     isCompleted: boolean
     nextQuestion?: QANextQuestion
     data?: QADataBlob
+    theory?: string | null
   }> {
     const answerRequest: QAAnswerRequest = {
       session_id: params.sessionId,
@@ -40,17 +42,6 @@ export const companyProfileService = {
 
     const aiResponse = await aiClient.submitAnswer(answerRequest)
 
-    // Save current answer to DB
-    await companyProfileRepository.upsertProfileQA(
-      params.tenantId,
-      params.nextQuestion.field_key,
-      params.nextQuestion.text,
-      [params.answer],
-      params.userId,
-      params.userId,
-      params.nextQuestion.mode
-    )
-
     // Handle resolved conflicts
     const resolvedConflicts = (aiResponse.data.conflict_context as any)?.resolved_conflict_ids as Array<Record<string, unknown>> | null | undefined
     if (resolvedConflicts && resolvedConflicts.length > 0) {
@@ -60,11 +51,17 @@ export const companyProfileService = {
         if (!fieldKey) continue
         const resolvedValue = conflict[fieldKey]
         logger.info('Resolving conflict field', { tenantId: params.tenantId, fieldKey, resolvedValue })
-        await companyProfileRepository.resolveConflictQA(
+        await companyProfileRepository.addUpdateCompanyProfile(
           params.tenantId,
+          params.nextQuestion.field_key,
+          aiResponse.data as unknown as Record<string, unknown>,
+          null, null, null, false,
+          params.userId, params.userId,
+          null,
           fieldKey,
+          null,
           [String(resolvedValue)],
-          params.userId
+          null
         )
       }
     }
@@ -84,17 +81,20 @@ export const companyProfileService = {
         params.tenantId,
         params.nextQuestion.field_key,
         aiResponse.data as unknown as Record<string, unknown>,
-        null,
-        null,
-        null,
-        true,
-        params.userId,
-        params.userId,
-        finalizeResponse.rendered_text
+        null, null, null, true,
+        params.userId, params.userId,
+        finalizeResponse.rendered_text,
+        params.nextQuestion.field_key,
+        params.nextQuestion.text,
+        [params.answer],
+        params.nextQuestion.mode
       )
 
       logger.info('Profile Q&A completed and theory saved', { tenantId: params.tenantId })
-      return { isCompleted: true }
+      return {
+        isCompleted: true,
+        theory: finalizeResponse.rendered_text ?? null,
+      }
     }
 
     // Still in progress — persist session state and return next question
@@ -102,16 +102,21 @@ export const companyProfileService = {
       params.tenantId,
       aiResponse.next_question!.field_key,
       aiResponse.data as unknown as Record<string, unknown>,
+      null, null, null, false,
+      params.userId, params.userId,
       null,
-      null,
-      null,
-      false,
-      params.userId,
-      params.userId,
-      null
+      params.nextQuestion.field_key,
+      params.nextQuestion.text,
+      [params.answer],
+      params.nextQuestion.mode
     )
 
-    return { isCompleted: false, nextQuestion: aiResponse.next_question!, data: aiResponse.data }
+    return {
+      isCompleted: false,
+      nextQuestion: aiResponse.next_question!,
+      data: aiResponse.data,
+      theory: null,
+    }
   },
 
   // ─── GET /qa-for-edit ─────────────────────────────────────────────────────────
@@ -126,11 +131,6 @@ export const companyProfileService = {
   // ─── GET /details ─────────────────────────────────────────────────────────────
   async getProfileDetails(tenantId: number) {
     return companyProfileRepository.getProfileDetails(tenantId)
-  },
-
-  // ─── GET /master-data ─────────────────────────────────────────────────────────
-  async getMasterData() {
-    return commonService.getMasterDataList()
   },
 
   // ─── GET /registration ────────────────────────────────────────────────────────
@@ -165,9 +165,8 @@ export const companyProfileService = {
     if (!session) throw new AppError('No profile session found', 404)
 
     const savedContext = session.context_data as Record<string, unknown>
-    const orgDnaContext = savedContext.org_dna_context as Record<string, unknown>
 
-    const startResponse = await aiClient.startUpdate(tenantId, userId, fieldKey, orgDnaContext)
+    const startResponse = await aiClient.startUpdate(tenantId, userId, fieldKey, savedContext)
     if (startResponse.cancelled) throw new AppError('Update cancelled by AI', 400)
 
     const respondResponse = await aiClient.respondToUpdate(
@@ -229,8 +228,18 @@ export const companyProfileService = {
     if (!session) throw new AppError('No profile session found', 404)
 
     const savedCtx = session.context_data as Record<string, unknown>
+    const primaryFieldKey = updatedFields[0]
+    const interactions = (savedCtx.interactions as Array<Record<string, unknown>>) ?? []
+    const updatedInteractions = interactions.map((item) => {
+      const fk = item.field_key as string
+      if (fk === primaryFieldKey) return { ...item, raw_answer: newValue }
+      if (impactedUpdates[fk] !== undefined) return { ...item, raw_answer: impactedUpdates[fk] }
+      return item
+    })
+
     const finalContextData: Record<string, unknown> = {
       ...savedCtx,
+      interactions: updatedInteractions,
       org_dna_context: {
         ...(savedCtx.org_dna_context as Record<string, unknown>),
         org_dna_snapshot: updatedSnapshot,

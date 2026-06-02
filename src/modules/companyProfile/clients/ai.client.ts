@@ -57,21 +57,22 @@ export interface FinalizeResponse {
 
 export const aiClient = {
   // POST /api/org-dna/start
-  async startSession(orgId: number, userId: number): Promise<ProfileQAResponse> {
+  // resumeData: pass context_data from DB to resume an existing session; omit for fresh start
+  async startSession(orgId: number, userId: number, resumeData?: Record<string, unknown>): Promise<ProfileQAResponse> {
     const body: QAStartRequest = {
-      id: '1',
+      id: String(orgId),
       org_id: String(orgId),
       user_id: String(userId),
       session_id: '',
       question_id: '',
-      data: { org_dna_snapshot: {} },
+      data: resumeData ? (resumeData as QAStartRequest['data']) : { org_dna_snapshot: {} },
     }
     try {
       const response = await httpClient.post<ProfileQAResponse>(
         `${AI_BASE}/api/org-dna/start`,
         body
       )
-      logger.info('AI /org-dna/start called', { orgId, userId })
+      logger.info('AI /org-dna/start called', { orgId, userId, resume: !!resumeData })
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -105,16 +106,17 @@ export const aiClient = {
     orgId: number,
     userId: number,
     fieldKey: string,
-    orgDnaContext: Record<string, unknown>
+    contextData: Record<string, unknown>
   ): Promise<UpdateStartResponse> {
     try {
       const response = await httpClient.post<UpdateStartResponse>(
         `${AI_BASE}/api/org-dna/update-field/start`,
         {
+          id: String(orgId),
           org_id: String(orgId),
           user_id: String(userId),
           field_key: fieldKey,
-          org_dna_context: orgDnaContext,
+          data: contextData,
           skip_question: true,
         }
       )

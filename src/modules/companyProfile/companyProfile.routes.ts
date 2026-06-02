@@ -36,6 +36,6 @@ router.delete('/', requireAdmin, companyProfileController.deleteProfile)
 router.get('/qa-for-edit', companyProfileController.getQAForEdit)
 router.get('/details', companyProfileController.getProfileDetails)
 router.get('/list', companyProfileController.getProfileList)
-router.get('/master-data', companyProfileController.getMasterData)
+
 
 export default router

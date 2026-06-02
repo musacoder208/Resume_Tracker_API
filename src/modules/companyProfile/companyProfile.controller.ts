@@ -1,6 +1,7 @@
 import type { Response, NextFunction } from 'express'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
+import { sendSuccess } from '@shared/utils/response'
 import { companyProfileService } from './services/companyProfile.service'
 import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
 
@@ -30,19 +31,22 @@ export const companyProfileController = {
       const { userId, tenantId } = req
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
-      const { sessionId, nextQuestion, data } = await companyProfileService.startProfile(userId, tenantId)
+      const { sessionId, nextQuestion, data, theory } = await companyProfileService.startProfile(userId, tenantId)
 
       tempSessionId = sessionId
       tempNextQuestion = nextQuestion
       tempData = data
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'PROFILE_SESSION_STARTED',
         message: 'Profile session started',
         data: {
           session_id: tempSessionId,
           next_question: tempNextQuestion,
+          theory: theory ?? null,
+          data_blob: data,
         },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -69,10 +73,14 @@ export const companyProfileController = {
 
       if (result.isCompleted) {
         clearTempState()
-        res.status(200).json({
-          success: true,
+        sendSuccess(res, {
+          code: 'PROFILE_COMPLETED',
           message: 'Profile completed successfully',
-          data: null,
+          data: {
+            next_question: null,
+            theory: result.theory ?? null,
+          },
+          requestId: req.traceId,
         })
         return
       }
@@ -80,12 +88,15 @@ export const companyProfileController = {
       tempNextQuestion = result.nextQuestion!
       tempData = result.data!
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'ANSWER_SUBMITTED',
         message: 'Answer submitted',
         data: {
           next_question: tempNextQuestion,
+          theory: result.theory ?? null,
+          data_blob: result.data,
         },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -98,7 +109,7 @@ export const companyProfileController = {
       if (!tenantId) throw new AppError('Unauthorized', 401)
 
       const result = await companyProfileService.getQAForEdit(tenantId)
-      res.status(200).json({ success: true, message: 'Profile Q&A fetched', data: result })
+      sendSuccess(res, { code: 'PROFILE_QA_FETCHED', message: 'Profile Q&A fetched', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -110,7 +121,7 @@ export const companyProfileController = {
       if (!tenantId) throw new AppError('Unauthorized', 401)
 
       const result = await companyProfileService.getProfileDetails(tenantId)
-      res.status(200).json({ success: true, message: 'Profile details fetched', data: result })
+      sendSuccess(res, { code: 'PROFILE_DETAILS_FETCHED', message: 'Profile details fetched', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -122,7 +133,7 @@ export const companyProfileController = {
       if (!tenantId) throw new AppError('Unauthorized', 401)
 
       const result = await companyProfileService.getProfileList(tenantId)
-      res.status(200).json({ success: true, message: 'Profile list fetched', data: result })
+      sendSuccess(res, { code: 'PROFILE_LIST_FETCHED', message: 'Profile list fetched', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -143,7 +154,7 @@ export const companyProfileController = {
       tempEditUpdateContext = result.update_context
       tempEditStep = result.step
 
-      res.status(200).json({ success: true, message: 'Edit initiated', data: result })
+      sendSuccess(res, { code: 'EDIT_INITIATED', message: 'Edit initiated', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -173,17 +184,9 @@ export const companyProfileController = {
         tempEditStep = result.step as string
       }
 
+      const code = result.completed ? 'ANSWER_UPDATED' : 'RESPONSE_SUBMITTED'
       const message = result.completed ? 'Answer updated successfully' : 'Response submitted'
-      res.status(200).json({ success: true, message, data: result })
-    } catch (error) {
-      next(error)
-    }
-  },
-
-  async getMasterData(_req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const result = await companyProfileService.getMasterData()
-      res.status(200).json({ success: true, message: 'Master data fetched', data: result })
+      sendSuccess(res, { code, message, data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -195,7 +198,7 @@ export const companyProfileController = {
       if (!tenantId) throw new AppError('Unauthorized', 401)
 
       const result = await companyProfileService.getCompanyRegistration(tenantId)
-      res.status(200).json({ success: true, message: 'Company registration details fetched', data: result })
+      sendSuccess(res, { code: 'COMPANY_REGISTRATION_FETCHED', message: 'Company registration details fetched', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -207,7 +210,7 @@ export const companyProfileController = {
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
       const result = await companyProfileService.updateCompanyRegistration(tenantId, userId, req.body)
-      res.status(200).json({ success: true, message: 'Company registration updated', data: result })
+      sendSuccess(res, { code: 'COMPANY_REGISTRATION_UPDATED', message: 'Company registration updated', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }
@@ -219,7 +222,7 @@ export const companyProfileController = {
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
       const result = await companyProfileService.deleteProfile(userId, tenantId)
-      res.status(200).json({ success: true, message: 'Profile deleted successfully', data: result })
+      sendSuccess(res, { code: 'PROFILE_DELETED', message: 'Profile deleted successfully', data: result, requestId: req.traceId })
     } catch (error) {
       next(error)
     }

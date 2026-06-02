@@ -13,11 +13,15 @@ export const companyProfileRepository = {
     isCompleted: boolean,
     createdBy: number,
     modifiedBy: number,
-    theory: unknown = null
+    theory: unknown = null,
+    qaFieldKey: string | null = null,
+    questionText: string | null = null,
+    answerValue: string[] | null = null,
+    mode: string | null = null
   ) {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_add_update_company_profile($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::jsonb) AS result',
+        'SELECT mechsoft.fn_add_update_company_profile($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::jsonb, $11, $12, $13::text[], $14) AS result',
         [
           companyId,
           fieldKey,
@@ -29,6 +33,10 @@ export const companyProfileRepository = {
           createdBy,
           modifiedBy,
           theory !== null && theory !== undefined ? JSON.stringify(theory) : null,
+          qaFieldKey ?? null,
+          questionText ?? null,
+          answerValue ?? null,
+          mode ?? null,
         ]
       )
       return result.rows[0]?.result ?? null
@@ -155,6 +163,20 @@ export const companyProfileRepository = {
     } catch (error) {
       console.error('RAW DB ERROR getActiveChatSession:', (error as Error).message)
       logger.error('DB error in getActiveChatSession', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async checkProfileExists(companyId: number): Promise<{ exists: boolean; data: Record<string, unknown>; theory: string | null }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_check_profile_exists($1) AS result',
+        [companyId]
+      )
+      return result.rows[0]?.result ?? { exists: false, data: {}, theory: null }
+    } catch (error) {
+      console.error('RAW DB ERROR checkProfileExists:', (error as Error).message)
+      logger.error('DB error in checkProfileExists', { error })
       throw new AppError('Database error', 500)
     }
   },
@@ -298,24 +320,6 @@ export const companyProfileRepository = {
     } catch (error) {
       console.error('RAW DB ERROR getProfileDetails:', (error as Error).message)
       logger.error('DB error in getProfileDetails', { error })
-      throw new AppError('Database error', 500)
-    }
-  },
-
-  async resolveConflictQA(
-    companyId: number,
-    fieldKey: string,
-    answerValue: string[],
-    modifiedBy: number
-  ) {
-    try {
-      await pool.query(
-        'SELECT mechsoft.fn_resolve_conflict_qa($1, $2, $3::text[], $4)',
-        [companyId, fieldKey, answerValue, modifiedBy]
-      )
-    } catch (error) {
-      console.error('RAW DB ERROR resolveConflictQA:', (error as Error).message)
-      logger.error('DB error in resolveConflictQA', { error })
       throw new AppError('Database error', 500)
     }
   },

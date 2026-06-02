@@ -193,6 +193,44 @@ $$;
 
 
 -- ─────────────────────────────────────────────────────────────
+-- 4c. Check if an active incomplete profile session exists.
+--     exists = true  → returns context_data as data + theory
+--     exists = false → returns empty data object, theory null
+-- ─────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION mechsoft.fn_check_profile_exists(
+    p_company_id INT
+)
+RETURNS JSON
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_context_data JSONB;
+    v_theory       TEXT;
+    v_result       JSON;
+BEGIN
+    SELECT s.context_data, s.theory
+    INTO   v_context_data, v_theory
+    FROM   mechsoft.tbl_profile_ai_chat_session s
+    JOIN   mechsoft.company_profile_header      h ON h.company_id = s.company_id
+    WHERE  s.company_id  = p_company_id
+      AND  s.is_deleted  = FALSE
+      AND  h.is_deleted  = FALSE
+      -- AND  h.is_completed = FALSE
+    ORDER  BY COALESCE(s.modified_date, s.created_date) DESC
+    LIMIT  1;
+
+    IF v_context_data IS NOT NULL THEN
+        v_result := JSON_BUILD_OBJECT('exists', TRUE, 'data', v_context_data, 'theory', v_theory);
+    ELSE
+        v_result := JSON_BUILD_OBJECT('exists', FALSE, 'data', '{}'::JSONB, 'theory', NULL);
+    END IF;
+
+    RETURN v_result;
+END;
+$$;
+
+
+-- ─────────────────────────────────────────────────────────────
 -- 5. Upsert AI chat session (one active session per company)
 -- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION mechsoft.fn_upsert_chat_session(
@@ -543,7 +581,11 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_add_update_company_profile(
     p_is_completed   BOOLEAN,
     p_created_by     INT,
     p_modified_by    INT,
-    p_theory         JSONB DEFAULT NULL
+    p_theory         JSONB DEFAULT NULL,
+    p_qa_field_key   VARCHAR DEFAULT NULL,  -- current question field_key (may differ from session p_field_key)
+    p_question_text  VARCHAR DEFAULT NULL,
+    p_answer_value   TEXT[]  DEFAULT NULL,
+    p_mode           VARCHAR DEFAULT NULL
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -614,15 +656,15 @@ BEGIN
 
                     -- Insert old answer into audit
                     INSERT INTO mechsoft.tbl_profile_qa_audit (
-                        company_id, answer_value, change_reason,
+                        company_id, field_key, question_text, answer_value, mode,
+                        change_reason, audited_by, audited_date,
                         is_deleted, created_by, created_date, modified_by, modified_date
                     )
-                    VALUES (
-                        p_company_id,
-                        v_old_answer,
-                        'Answer updated',
+                    SELECT
+                        company_id, field_key, question_text, answer_value, mode,
+                        'Answer updated', p_modified_by, NOW(),
                         FALSE, p_modified_by, NOW(), NULL, NULL
-                    );
+                    FROM mechsoft.tbl_profile_qa WHERE id = v_qa_id;
 
                     -- Update QA record with new answer (keep existing mode)
                     UPDATE mechsoft.tbl_profile_qa
@@ -650,6 +692,60 @@ BEGIN
                 );
             END IF;
         END LOOP;
+    END IF;
+
+    -- ── 3a. Single-field QA upsert + audit (replaces fn_upsert_profile_qa) ──────
+    IF p_qa_field_key IS NOT NULL AND p_answer_value IS NOT NULL THEN
+        IF p_mode IN ('clarification', 'crossfield') THEN
+            INSERT INTO mechsoft.tbl_profile_qa (
+                company_id, field_key, question_text, answer_value, mode,
+                is_deleted, created_by, created_date, modified_by, modified_date
+            )
+            VALUES (
+                p_company_id, p_qa_field_key, COALESCE(p_question_text, ''), p_answer_value, p_mode,
+                FALSE, p_created_by, NOW(), NULL, NULL
+            );
+        ELSE
+            SELECT id INTO v_qa_id
+            FROM   mechsoft.tbl_profile_qa
+            WHERE  company_id = p_company_id
+              AND  field_key  = p_qa_field_key
+              AND  COALESCE(mode, 'initial') NOT IN ('clarification', 'crossfield')
+              AND  is_deleted = FALSE
+            LIMIT  1;
+
+            IF v_qa_id IS NOT NULL THEN
+                -- Audit old record before update
+                INSERT INTO mechsoft.tbl_profile_qa_audit (
+                    company_id, field_key, question_text, answer_value, mode,
+                    change_reason, audited_by, audited_date,
+                    is_deleted, created_by, created_date, modified_by, modified_date
+                )
+                SELECT
+                    company_id, field_key, question_text, answer_value, mode,
+                    'Answer updated', p_modified_by, NOW(),
+                    FALSE, p_modified_by, NOW(), NULL, NULL
+                FROM mechsoft.tbl_profile_qa WHERE id = v_qa_id;
+
+                -- Update QA record
+                UPDATE mechsoft.tbl_profile_qa
+                SET    question_text  = COALESCE(p_question_text, question_text),
+                       answer_value   = p_answer_value,
+                       mode           = COALESCE(p_mode, mode),
+                       modified_by    = p_modified_by,
+                       modified_date  = NOW()
+                WHERE  id = v_qa_id;
+            ELSE
+                INSERT INTO mechsoft.tbl_profile_qa (
+                    company_id, field_key, question_text, answer_value, mode,
+                    is_deleted, created_by, created_date, modified_by, modified_date
+                )
+                VALUES (
+                    p_company_id, p_qa_field_key, COALESCE(p_question_text, ''), p_answer_value, p_mode,
+                    FALSE, p_created_by, NOW(), NULL, NULL
+                );
+            END IF;
+        END IF;
     END IF;
 
     -- ── 4. Flip is_completed when Q&A finishes ────────────────────────────────
@@ -686,15 +782,15 @@ BEGIN
 
             -- First: insert old answer into audit
             INSERT INTO mechsoft.tbl_profile_qa_audit (
-                company_id, answer_value, change_reason,
+                company_id, field_key, question_text, answer_value, mode,
+                change_reason, audited_by, audited_date,
                 is_deleted, created_by, created_date, modified_by, modified_date
             )
-            VALUES (
-                p_company_id,
-                v_old_answer,
-                p_change_reason,
+            SELECT
+                company_id, field_key, question_text, answer_value, mode,
+                p_change_reason, p_modified_by, NOW(),
                 FALSE, p_modified_by, NOW(), NULL, NULL
-            );
+            FROM mechsoft.tbl_profile_qa WHERE id = v_qa_id;
 
             -- Then: update QA record with new value (only initial row, not clarification)
             UPDATE mechsoft.tbl_profile_qa
@@ -739,109 +835,6 @@ $$;
 -- ─────────────────────────────────────────────────────────────
 -- 11. Update company registration details
 -- ─────────────────────────────────────────────────────────────
--- ─────────────────────────────────────────────────────────────
--- Resolve conflict: audit + update the correct tbl_profile_qa row
--- Rules:
---   1 row          → update it directly
---   clarification exists → update the latest clarification row
---   only initial/crossfield → update the initial row
--- ─────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION mechsoft.fn_resolve_conflict_qa(
-    p_company_id   INT,
-    p_field_key    VARCHAR,
-    p_answer_value TEXT[],
-    p_modified_by  INT
-)
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_qa_id      INT;
-    v_clar_count INT;
-    v_total      INT;
-BEGIN
-    SELECT COUNT(*) INTO v_total
-    FROM   mechsoft.tbl_profile_qa
-    WHERE  company_id = p_company_id
-      AND  field_key  = p_field_key
-      AND  is_deleted = FALSE;
-
-    IF v_total = 0 THEN
-        -- No existing row — insert a new initial row with the resolved value
-        INSERT INTO mechsoft.tbl_profile_qa (
-            company_id, field_key, question_text, answer_value, mode,
-            is_deleted, created_by, created_date, modified_by, modified_date
-        )
-        VALUES (
-            p_company_id, p_field_key, '', p_answer_value, 'initial',
-            FALSE, p_modified_by, NOW(), NULL, NULL
-        );
-        RETURN;
-    END IF;
-
-    -- Insert ALL existing rows for this field into audit before updating
-    INSERT INTO mechsoft.tbl_profile_qa_audit (
-        company_id, answer_value, change_reason,
-        is_deleted, created_by, created_date, modified_by, modified_date
-    )
-    SELECT
-        company_id, answer_value, 'Conflict resolved',
-        FALSE, p_modified_by, NOW(), NULL, NULL
-    FROM mechsoft.tbl_profile_qa
-    WHERE company_id = p_company_id
-      AND field_key  = p_field_key
-      AND is_deleted = FALSE;
-
-    IF v_total = 1 THEN
-        -- Single row: update directly regardless of mode
-        UPDATE mechsoft.tbl_profile_qa
-        SET    answer_value  = p_answer_value,
-               modified_by   = p_modified_by,
-               modified_date = NOW()
-        WHERE  company_id = p_company_id
-          AND  field_key  = p_field_key
-          AND  is_deleted = FALSE;
-        RETURN;
-    END IF;
-
-    -- Multiple rows: check if any clarification rows exist
-    SELECT COUNT(*) INTO v_clar_count
-    FROM   mechsoft.tbl_profile_qa
-    WHERE  company_id = p_company_id
-      AND  field_key  = p_field_key
-      AND  mode       = 'clarification'
-      AND  is_deleted = FALSE;
-
-    IF v_clar_count > 0 THEN
-        -- Update the latest clarification row (covers 2 rows and >2 rows cases)
-        SELECT id INTO v_qa_id
-        FROM   mechsoft.tbl_profile_qa
-        WHERE  company_id = p_company_id
-          AND  field_key  = p_field_key
-          AND  mode       = 'clarification'
-          AND  is_deleted = FALSE
-        ORDER BY id DESC
-        LIMIT 1;
-    ELSE
-        -- Only initial / crossfield rows — update the initial row
-        SELECT id INTO v_qa_id
-        FROM   mechsoft.tbl_profile_qa
-        WHERE  company_id = p_company_id
-          AND  field_key  = p_field_key
-          AND  COALESCE(mode, 'initial') = 'initial'
-          AND  is_deleted = FALSE
-        LIMIT 1;
-    END IF;
-
-    IF v_qa_id IS NOT NULL THEN
-        UPDATE mechsoft.tbl_profile_qa
-        SET    answer_value  = p_answer_value,
-               modified_by   = p_modified_by,
-               modified_date = NOW()
-        WHERE  id = v_qa_id;
-    END IF;
-END;
-$$;
 
 
 CREATE OR REPLACE FUNCTION public.fn_update_company_registration(

@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express'
 import { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
+import { sendSuccess } from '@shared/utils/response'
 import { GetAllJdsDto } from './schemas/jd.schema'
 import { jdService } from './services/jd.service'
 import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
@@ -58,13 +59,15 @@ export const jdController = {
       tempNextQuestion = nextQuestion
       tempData = data
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'JD_SESSION_STARTED',
         message: 'JD session started',
         data: {
           session_id: tempSessionId,
           next_question: tempNextQuestion,
+          data_blob: data,
         },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -99,10 +102,11 @@ export const jdController = {
         const finalizedJdId = result.jdId
         clearTempState()
 
-        res.status(200).json({
-          success: true,
+        sendSuccess(res, {
+          code: 'JD_COMPLETED',
           message: 'JD created successfully',
-          data: { jd_id: finalizedJdId },
+          data: { jd_id: finalizedJdId, next_question: null, theory: null },
+          requestId: req.traceId,
         })
         return
       }
@@ -110,12 +114,14 @@ export const jdController = {
       tempNextQuestion = result.nextQuestion!
       tempData = result.data!
 
-      res.status(200).json({
-        success: true,
-        message: 'Answer recorded',
+      sendSuccess(res, {
+        code: 'ANSWER_SUBMITTED',
+        message: 'Answer submitted',
         data: {
           next_question: tempNextQuestion,
+          data_blob: result.data,
         },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -308,7 +314,7 @@ export const jdController = {
 
       res.status(200).json({
         success: true,
-        message: 'Answer recorded',
+        message: 'Answer submitted',
         data: result.respondPayload,
       })
     } catch (error) {
