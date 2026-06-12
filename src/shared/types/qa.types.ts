@@ -28,18 +28,14 @@ export interface QANextQuestion {
 // Used for the first call (/start).
 // Fresh start : id="1", session_id="", question_id="", data has only org_dna_snapshot.
 // Resume      : id=actual jd_id, actual session_id/question_id,
-//               data has field_values + field_progress + org_dna_snapshot.
+//               data is the full dataBlob stored from previous session.
 export interface QAStartRequest {
   id: string
   org_id: string
   user_id: string
   session_id: string
   question_id: string
-  data: {
-    org_dna_snapshot: Record<string, unknown>
-    field_values?: Record<string, unknown>
-    field_progress?: Record<string, unknown>
-  }
+  data: Record<string, unknown>
 }
 
 // Used for every subsequent call (/answer). Full data blob from the previous

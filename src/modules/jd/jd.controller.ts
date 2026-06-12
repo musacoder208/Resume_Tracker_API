@@ -35,27 +35,18 @@ export const jdController = {
     try {
       const companyId = req.tenantId!
       const userId = req.userId!
-      const { jd_id, session_id, question_id, field_values, field_progress, org_dna_snapshot } = req.body
-
-      const isResume = !!jd_id
+      const  jdId  = req.body.jdId
+      const dataBlob  = req.body.dataBlob
 
       const { sessionId, nextQuestion, data } = await jdService.startJdSession(
         companyId,
         userId,
-        isResume
-          ? {
-              jdId: jd_id,
-              sessionId: session_id ?? '',
-              questionId: question_id ?? '',
-              fieldValues: field_values ?? {},
-              fieldProgress: field_progress ?? {},
-              orgDnaSnapshot: org_dna_snapshot ?? {},
-            }
-          : undefined
+        jdId ? jdId  : undefined,
+        dataBlob
       )
 
       tempSessionId = sessionId
-      tempJdId = null
+      tempJdId = jdId ?? null
       tempNextQuestion = nextQuestion
       tempData = data
 
@@ -105,7 +96,7 @@ export const jdController = {
         sendSuccess(res, {
           code: 'JD_COMPLETED',
           message: 'JD created successfully',
-          data: { jd_id: finalizedJdId, next_question: null, theory: null },
+          data: { jd_id: finalizedJdId, next_question: null, data_blob: result.data, theory: result.theory ?? null },
           requestId: req.traceId,
         })
         return
@@ -118,6 +109,7 @@ export const jdController = {
         code: 'ANSWER_SUBMITTED',
         message: 'Answer submitted',
         data: {
+          jd_id: tempJdId,
           next_question: tempNextQuestion,
           data_blob: result.data,
         },
@@ -130,14 +122,15 @@ export const jdController = {
 
   async updateWeightage(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jd_id, user_command } = req.body
-      const companyId = req.tenantId!
+      const { jd_id, user_command, field_values, current_weights, company_info } = req.body
       const userId = req.userId!
 
       const data = await jdService.updateWeightage({
         jdId: jd_id,
         userCommand: user_command,
-        companyId,
+        fieldValues: field_values,
+        currentWeights: current_weights,
+        companyInfo: company_info,
         userId,
       })
 
@@ -177,20 +170,13 @@ export const jdController = {
   async getJdDetailsById(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const jdId = Number(req.params.jd_id)
-
       const data = await jdService.getJdDetailsById(jdId)
 
-      if (data.sessionResumed) {
-        tempSessionId = data.sessionId
-        tempJdId = jdId
-        tempNextQuestion = data.nextQuestion
-        tempData = data.sessionData
-      }
-
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'JD_DETAILS_FETCHED',
         message: 'JD details fetched successfully',
         data,
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -233,12 +219,14 @@ export const jdController = {
 
   async updateTheory(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jd_id, edit_command } = req.body
+      const { jd_id, edit_command, field_values, rendered_text } = req.body
       const userId = req.userId!
 
       const data = await jdService.updateTheory({
         jdId: jd_id,
         editCommand: edit_command,
+        fieldValues: field_values,
+        renderedText: rendered_text,
         userId,
       })
 

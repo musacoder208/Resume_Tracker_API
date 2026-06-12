@@ -31,11 +31,16 @@ export const generateWeightageSchema = z.object({
 export const updateWeightageSchema = z.object({
   jd_id: z.number().int().positive('jd_id must be a positive integer'),
   user_command: z.string().min(1, 'user_command is required'),
+  field_values: z.record(z.unknown()).default({}),
+  current_weights: z.record(z.unknown()).default({}),
+  company_info: z.record(z.unknown()).default({}),
 })
 
 export const updateTheorySchema = z.object({
   jd_id: z.number().int().positive('jd_id must be a positive integer'),
   edit_command: z.string().min(1, 'edit_command is required'),
+  field_values: z.record(z.unknown()).default({}),
+  rendered_text: z.string().min(1, 'rendered_text is required'),
 })
 
 export const editQaSchema = z.object({

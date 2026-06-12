@@ -31,12 +31,13 @@ export const jdRepository = {
     jdTheory: string | null
     userId: number
     mode: string | null
+    workModel: string | null
   }): Promise<number> {
     try {
       const result = await pool.query(
         `SELECT mechsoft.fn_add_update_jd(
           $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10::text[], $11::jsonb, $12, $13, $14
+          $10::text[], $11::jsonb, $12, $13, $14, $15
         ) AS jd_id`,
         [
           params.jdId,
@@ -53,6 +54,7 @@ export const jdRepository = {
           params.jdTheory,
           params.userId,
           params.mode,
+          params.workModel,
         ]
       )
       return result.rows[0]?.jd_id as number
@@ -81,17 +83,15 @@ export const jdRepository = {
 
   async getJdDetailsById(jdId: number): Promise<{
     jdId: number
-    statusName: string
-    jdTheory: string | null
-    qa: { fieldKey: string; questionText: string; answerValue: string[]; mode: string | null }[]
+    jobTitleId: number
+    seniorityId: number
+    jobTitle: string | null
     sessionId: string
-    fieldValues: Record<string, unknown> | null
-    fieldProgress: Record<string, unknown> | null
-    questionCounts: Record<string, unknown> | null
+    statusName: string
+    theory: string | null
+    dataBlob: Record<string, unknown> | null
     weightageJson: Record<string, unknown> | null
-    nextQuestion: import('@shared/types/qa.types').QANextQuestion | null
-    sessionData: import('@shared/types/qa.types').QADataBlob | null
-    orgDnaSnapshot: Record<string, unknown> | null
+    isWeightage: boolean
   } | null> {
     try {
       const result = await pool.query(
@@ -100,25 +100,18 @@ export const jdRepository = {
       )
       if (!result.rows.length) return null
 
-      const first = result.rows[0]
+      const row = result.rows[0]
       return {
-        jdId: first.jd_id as number,
-        sessionId: first.session_id as string,
-        statusName: first.status_name as string,
-        jdTheory: first.jd_theory as string | null,
-        fieldValues: first.field_values as Record<string, unknown> | null,
-        fieldProgress: first.field_progress as Record<string, unknown> | null,
-        questionCounts: first.question_counts as Record<string, unknown> | null,
-        weightageJson: first.weightage_json as Record<string, unknown> | null,
-        nextQuestion: first.next_question ?? null,
-        sessionData: first.session_data ?? null,
-        orgDnaSnapshot: first.org_dna_snapshot as Record<string, unknown> | null,
-        qa: result.rows.map((r) => ({
-          fieldKey: r.field_key as string,
-          questionText: r.question_text as string,
-          answerValue: r.answer_value as string[],
-          mode: r.mode as string | null,
-        })),
+        jdId:          row.jd_id          as number,
+        jobTitleId:    row.job_title_id   as number,
+        seniorityId:   row.seniority_id   as number,
+        jobTitle:      row.job_title      as string | null,
+        sessionId:     row.session_id     as string,
+        statusName:    row.status_name    as string,
+        theory:        row.theory         as string | null,
+        dataBlob:      row.data_blob      as Record<string, unknown> | null,
+        weightageJson: row.weightage_json as Record<string, unknown> | null,
+        isWeightage:   row.is_weightage   as boolean,
       }
     } catch (error) {
       const msg = (error as Error).message
@@ -196,6 +189,49 @@ export const jdRepository = {
     }
   },
 
+  async saveJdEditTheory(params: {
+    jdId: number
+    renderedText: string
+    modifiedFields: string[]
+    updatedFieldValues: Record<string, unknown>
+    userId: number
+  }): Promise<void> {
+    try {
+      await pool.query(
+        'SELECT mechsoft.fn_save_jd_edit_theory($1, $2, $3, $4::jsonb, $5)',
+        [
+          params.jdId,
+          params.renderedText,
+          params.modifiedFields,
+          JSON.stringify(params.updatedFieldValues),
+          params.userId,
+        ]
+      )
+    } catch (error) {
+      const msg = (error as Error).message
+      logger.error('DB error in saveJdEditTheory', { message: msg, error })
+      throw new AppError(`Database error: ${msg}`, 500)
+    }
+  },
+
+  async updateJdQaHistory(params: {
+    jdId: number
+    fieldKey: string
+    newValue: unknown
+    userId: number
+  }): Promise<void> {
+    try {
+      await pool.query(
+        'SELECT mechsoft.fn_update_jd_qa_history($1, $2, $3::jsonb, $4)',
+        [params.jdId, params.fieldKey, JSON.stringify(params.newValue), params.userId]
+      )
+    } catch (error) {
+      const msg = (error as Error).message
+      logger.error('DB error in updateJdQaHistory', { message: msg, error })
+      throw new AppError(`Database error: ${msg}`, 500)
+    }
+  },
+
   async editJdQaAnswer(params: {
     jdId: number
     fieldKey: string
@@ -227,6 +263,30 @@ export const jdRepository = {
       return result.rows
     } catch (error) {
       logger.error('DB error in getAllJDs', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getJdCounts(companyId: number): Promise<{
+    totalJds: number
+    addedThisWeek: number
+    remoteRoles: number
+    hybridRoles: number
+  }> {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM mechsoft.fn_get_jd_counts($1)',
+        [companyId]
+      )
+      const row = result.rows[0]
+      return {
+        totalJds:       Number(row.total_jds),
+        addedThisWeek:  Number(row.added_this_week),
+        remoteRoles:    Number(row.remote_roles),
+        hybridRoles:    Number(row.hybrid_roles),
+      }
+    } catch (error) {
+      logger.error('DB error in getJdCounts', { error })
       throw new AppError('Database error', 500)
     }
   },

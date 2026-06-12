@@ -4,6 +4,24 @@ import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
 
+function normalizeAnswerValue(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return (value as unknown[]).join(',')
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if ('min' in obj || 'max' in obj) {
+      const min = obj.min
+      const max = obj.max
+      if (min != null && (max === null || max === undefined)) return `${min}+`
+      if (min != null && max != null) return min === max ? `${min}` : `${min}-${max}`
+      if (max != null) return `${max}`
+    }
+    return JSON.stringify(value)
+  }
+  return String(value)
+}
+
 function parseExperience(
   answer: string,
   fieldKey: string
@@ -90,42 +108,38 @@ export const jdService = {
   async startJdSession(
     companyId: number,
     userId: number,
-    resume?: {
-      jdId: number
-      sessionId: string
-      questionId: string
-      fieldValues: Record<string, unknown>
-      fieldProgress: Record<string, unknown>
-      orgDnaSnapshot: Record<string, unknown>
-    }
+    jdId?: number,
+    jdDetails?: any
   ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob }> {
-    const preparedOrgDna = resume ? resume.orgDnaSnapshot : await getCompanyOrgDna(companyId)
+    let requestBody: import('@shared/types/qa.types').QAStartRequest
 
-    const response = await pythonClient.startJd(
-      resume
-        ? {
-            id: String(resume.jdId),
-            org_id: String(companyId),
-            user_id: String(userId),
-            session_id: resume.sessionId,
-            question_id: resume.questionId,
-            data: {
-              org_dna_snapshot: preparedOrgDna,
-              field_values: resume.fieldValues,
-              field_progress: resume.fieldProgress,
-            },
-          }
-        : {
-            id: '1',
-            org_id: String(companyId),
-            user_id: String(userId),
-            session_id: '',
-            question_id: '',
-            data: { org_dna_snapshot: preparedOrgDna },
-          }
-    )
+    if (jdId) {
+      // const jdDetails = await jdRepository.getJdDetailsById(resume.jdId)
+      // if (!jdDetails) throw new AppError('JD not found', 404)
 
-    logger.info('JD session started', { companyId, sessionId: response.session_id, userId, resume: !!resume })
+      requestBody = {
+        id: String(jdId),
+        org_id: String(companyId),
+        user_id: String(userId),
+        session_id: jdDetails.sessionId ?? '',
+        question_id: '',
+        data: jdDetails ?? {},
+      }
+    } else {
+      const orgDna = await getCompanyOrgDna(companyId)
+      requestBody = {
+        id: '1',
+        org_id: String(companyId),
+        user_id: String(userId),
+        session_id: '',
+        question_id: '',
+        data: { org_dna_snapshot: orgDna },
+      }
+    }
+
+    const response = await pythonClient.startJd(requestBody)
+
+    //logger.info('JD session started', { companyId, sessionId: response.session_id, userId, resume: !!resume })
     return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data }
   },
 
@@ -144,6 +158,7 @@ export const jdService = {
     isFinalized: boolean
     nextQuestion?: QANextQuestion
     data?: QADataBlob
+    theory?: string
   }> {
     const { minExp, maxExp } = parseExperience(params.answer, params.nextQuestion.field_key)
 
@@ -167,10 +182,11 @@ export const jdService = {
       fieldKey: params.nextQuestion.field_key,
       questionText: params.nextQuestion.text,
       answerValue: [params.answer],
-      qaHistory: answerResponse as unknown as Record<string, unknown>,
+      qaHistory: answerResponse.data as unknown as Record<string, unknown>,
       jdTheory: null,
       userId: params.userId,
       mode: params.nextQuestion.mode,
+      workModel: params.nextQuestion.field_key === 'work_model' ? params.answer : null,
     })
 
     if (!answerResponse.completed) {
@@ -193,16 +209,14 @@ export const jdService = {
     })
 
     logger.info('JD created successfully', { jdId, companyId: params.companyId })
-    return { jdId, isFinalized: true }
+    return { jdId, isFinalized: true, theory: finalizeResponse.rendered_text, data: answerResponse.data }
   },
 
   async getJdDetailsById(jdId: number) {
     const data = await jdRepository.getJdDetailsById(jdId)
     if (!data) throw new AppError('JD not found', 404)
-
-    const sessionResumed = data.jdTheory === null && data.nextQuestion !== null
-    logger.info('JD details fetched', { jdId, status: data.statusName, sessionResumed })
-    return { ...data, sessionResumed }
+    logger.info('JD details fetched', { jdId, status: data.statusName })
+    return data
   },
 
   async generateWeightage(params: {
@@ -220,8 +234,8 @@ export const jdService = {
 
     const weightsResponse = await pythonClient.generateWeights({
       jd_id: String(params.jdId),
-      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
-      field_progress: (jdDetails.fieldProgress as Record<string, unknown>) ?? {},
+      field_values: (jdDetails.dataBlob?.field_values as Record<string, unknown>) ?? {},
+      field_progress: (jdDetails.dataBlob?.field_progress as Record<string, unknown>) ?? {},
       company_info: companyInfo,
       additional_notes: params.additionalNotes,
       created_by: String(params.userId),
@@ -252,24 +266,26 @@ export const jdService = {
   async updateWeightage(params: {
     jdId: number
     userCommand: string
-    companyId: number
+    fieldValues: Record<string, unknown>
+    currentWeights: Record<string, unknown>
+    companyInfo: Record<string, unknown>
     userId: number
   }) {
-    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
-    if (!jdDetails) {
-      throw new AppError('JD not found', 404)
-    }
-    if (!jdDetails.weightageJson) {
-      throw new AppError('No weightage found for this JD. Generate weightage first.', 400)
-    }
+    // const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
+    // if (!jdDetails) {
+    //   throw new AppError('JD not found', 404)
+    // }
+    // if (!jdDetails.weightageJson) {
+    //   throw new AppError('No weightage found for this JD. Generate weightage first.', 400)
+    // }
 
-    const companyInfo = await getCompanyOrgDna(params.companyId)
+    // const companyInfo = await getCompanyOrgDna(params.companyId)
 
     const adjustResponse = await pythonClient.adjustWeights({
       jd_id: String(params.jdId),
-      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
-      current_weights: jdDetails.weightageJson as Record<string, unknown>,
-      company_info: companyInfo,
+      field_values: params.fieldValues,
+      current_weights: params.currentWeights,
+      company_info: params.companyInfo,
       user_command: params.userCommand,
       adjusted_by: String(params.userId),
     })
@@ -292,7 +308,11 @@ export const jdService = {
     })
 
     logger.info('JD weightage updated', { jdId: params.jdId, weightageId })
-    return { weightageId, capabilities: capabilitiesArray }
+    return {
+      ...adjustResponse,
+      jd_id: params.jdId,
+      weightageId,
+    }
   },
 
   async deleteJd(params: { jdId: number; userId: number }): Promise<{ deleted: boolean; message: string }> {
@@ -306,36 +326,41 @@ export const jdService = {
   },
 
   async getAllJDs(companyId: number, jobTitleId?: number, seniorityId?: number) {
-    const list = await jdRepository.getAllJDs({ companyId, jobTitleId, seniorityId })
+    const [list, counts] = await Promise.all([
+      jdRepository.getAllJDs({ companyId, jobTitleId, seniorityId }),
+      jdRepository.getJdCounts(companyId),
+    ])
     logger.info('JD list fetched', { companyId, count: list.length })
-    return list
+    return { counts, list }
   },
 
   async updateTheory(params: {
     jdId: number
     editCommand: string
+    fieldValues: Record<string, unknown>
+    renderedText: string
     userId: number
   }): Promise<JdUpdateTextResponse> {
-    const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
-    if (!jdDetails) {
-      throw new AppError('JD not found', 404)
-    }
-    if (!jdDetails.jdTheory) {
-      throw new AppError('JD theory not found. Finalize the JD first.', 400)
-    }
+    // const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
+    // if (!jdDetails) {
+    //   throw new AppError('JD not found', 404)
+    // }
+    // if (!jdDetails.theory) {
+    //   throw new AppError('JD theory not found. Finalize the JD first.', 400)
+    // }
 
     const pythonResponse = await pythonClient.updateText({
       jd_id: String(params.jdId),
-      field_values: (jdDetails.fieldValues as Record<string, unknown>) ?? {},
+      field_values: params.fieldValues,
       edit_command: params.editCommand,
-      rendered_text: jdDetails.jdTheory,
+      rendered_text: params.renderedText,
       edit_reason: '',
       edited_by: String(params.userId),
       conversation_mode: true,
       conversation_history: [],
     })
 
-    await jdRepository.updateJdTheory({
+    await jdRepository.saveJdEditTheory({
       jdId: params.jdId,
       renderedText: pythonResponse.rendered_text,
       modifiedFields: pythonResponse.modified_fields ?? [],
@@ -415,17 +440,30 @@ export const jdService = {
 
     if (respondResponse.completed) {
       const stateContext = respondResponse.state.update_context
-      const fieldKey = stateContext?.target_field as string
-      const newAnswer = [(stateContext as any)?.answers?.new_value as string]
+      const updatedFields = (respondResponse.updated_fields ?? []) as string[]
+      const fieldValues = (stateContext?.field_values ?? {}) as Record<string, unknown>
 
-      await jdRepository.editJdQaAnswer({
-        jdId: params.jdId,
-        fieldKey,
-        newAnswer,
-        userId: params.userId,
-      })
+      for (const fieldKey of updatedFields) {
+        const rawValue = fieldValues[fieldKey] ?? ''
+        const displayValue = normalizeAnswerValue(rawValue)
+        const answerArray = Array.isArray(rawValue)
+          ? (rawValue as string[])
+          : [displayValue]
+        await jdRepository.editJdQaAnswer({
+          jdId: params.jdId,
+          fieldKey,
+          newAnswer: answerArray,
+          userId: params.userId,
+        })
+        await jdRepository.updateJdQaHistory({
+          jdId: params.jdId,
+          fieldKey,
+          newValue: displayValue,
+          userId: params.userId,
+        })
+      }
 
-      logger.info('JD QA answer updated', { jdId: params.jdId, fieldKey })
+      logger.info('JD QA answer updated', { jdId: params.jdId, updatedFields })
       return { isCompleted: true, updateContext: stateContext, step: respondResponse.step, respondPayload: respondResponse }
     }
 
