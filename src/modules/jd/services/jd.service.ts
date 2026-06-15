@@ -269,6 +269,8 @@ export const jdService = {
     fieldValues: Record<string, unknown>
     currentWeights: Record<string, unknown>
     companyInfo: Record<string, unknown>
+    forceOverride: boolean
+    conversationHistory: unknown[]
     userId: number
   }) {
     // const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
@@ -288,7 +290,19 @@ export const jdService = {
       company_info: params.companyInfo,
       user_command: params.userCommand,
       adjusted_by: String(params.userId),
+      force_override: params.forceOverride,
+      conversation_history: params.conversationHistory,
     })
+
+    if (!adjustResponse.success) {
+      logger.warn('Python adjust-weights returned error — skipping DB save', { jdId: params.jdId })
+      return { ...adjustResponse, jd_id: params.jdId }
+    }
+
+    if (!adjustResponse.weights_updated) {
+      logger.info('JD weightage not updated by Python — skipping DB save', { jdId: params.jdId })
+      return { ...adjustResponse, jd_id: params.jdId }
+    }
 
     const capabilitiesArray = Object.entries(adjustResponse.weights_payload?.capabilities ?? {}).map(
       ([key, val]) => ({
@@ -325,13 +339,22 @@ export const jdService = {
     return { deleted: true, message: 'JD deleted successfully.' }
   },
 
-  async getAllJDs(companyId: number, jobTitleId?: number, seniorityId?: number) {
-    const [list, counts] = await Promise.all([
-      jdRepository.getAllJDs({ companyId, jobTitleId, seniorityId }),
-      jdRepository.getJdCounts(companyId),
+  async getAllJDs(params: {
+    companyId: number
+    jobTitleId?: number
+    seniorityId?: number
+    page: number
+    pageSize: number
+    sortBy: string
+    sortOrder: string
+  }) {
+    const [{ rows: list, totalCount }, counts] = await Promise.all([
+      jdRepository.getAllJDs(params),
+      jdRepository.getJdCounts(params.companyId),
     ])
-    logger.info('JD list fetched', { companyId, count: list.length })
-    return { counts, list }
+    const totalPages = Math.ceil(totalCount / params.pageSize)
+    logger.info('JD list fetched', { companyId: params.companyId, count: list.length, totalCount })
+    return { counts: { ...counts, total_count: totalCount, total_pages: totalPages }, list }
   },
 
   async updateTheory(params: {

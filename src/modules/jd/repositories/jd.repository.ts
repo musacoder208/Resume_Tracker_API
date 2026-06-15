@@ -254,16 +254,44 @@ export const jdRepository = {
     companyId: number
     jobTitleId?: number
     seniorityId?: number
-  }): Promise<Record<string, unknown>[]> {
+    page: number
+    pageSize: number
+    sortBy: string
+    sortOrder: string
+  }): Promise<{ rows: Record<string, unknown>[]; totalCount: number }> {
+    const SORT_COLUMN_MAP: Record<string, string> = {
+      job_title:   'job_title',
+      seniority:   'seniority',
+      min_exp:     'min_exp',
+      max_exp:     'max_exp',
+      status_name: 'status_name',
+      work_model:  'work_model',
+      start_date:  'start_date',
+    }
+
+    const sortCol  = SORT_COLUMN_MAP[params.sortBy] ?? 'start_date'
+    const sortDir  = params.sortOrder === 'asc' ? 'ASC' : 'DESC'
+    const offset   = (params.page - 1) * params.pageSize
+
     try {
       const result = await pool.query(
-        'SELECT * FROM mechsoft.fn_get_all_jds($1, $2, $3)',
-        [params.companyId, params.jobTitleId ?? null, params.seniorityId ?? null]
+        `SELECT * FROM mechsoft.fn_get_all_jds($1, $2, $3)
+         ORDER BY ${sortCol} ${sortDir}
+         LIMIT $4 OFFSET $5`,
+        [
+          params.companyId,
+          params.jobTitleId ?? null,
+          params.seniorityId ?? null,
+          params.pageSize,
+          offset,
+        ]
       )
-      return result.rows
+      const totalCount = result.rows.length > 0 ? Number(result.rows[0].total_count) : 0
+      return { rows: result.rows, totalCount }
     } catch (error) {
+      const msg = (error as Error).message
       logger.error('DB error in getAllJDs', { error })
-      throw new AppError('Database error', 500)
+      throw new AppError(`Database error: ${msg}`, 500)
     }
   },
 

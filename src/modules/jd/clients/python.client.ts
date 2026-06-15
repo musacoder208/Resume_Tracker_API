@@ -90,6 +90,8 @@ export interface JdAdjustWeightsRequest {
   current_weights: Record<string, unknown>
   company_info: Record<string, unknown>
   adjusted_by: string
+  force_override: boolean
+  conversation_history: unknown[]
 }
 
 export interface JdWeightagePayload {
@@ -234,6 +236,9 @@ export const pythonClient = {
 
   async adjustWeights(body: JdAdjustWeightsRequest): Promise<JdAdjustWeightsResponse> {
     try {
+      console.log('=== adjustWeights REQUEST BODY ===')
+      console.log(JSON.stringify(body, null, 2))
+      console.log('==================================')
       const response = await httpClient.post<JdAdjustWeightsResponse>(
         `${PYTHON_BASE}/api/jd/adjust-weights`,
         body
@@ -241,6 +246,11 @@ export const pythonClient = {
       logger.info('Python JD /adjust-weights called', { jdId: body.jd_id })
       return response.data
     } catch (error) {
+      const axiosError = error as { response?: { data?: JdAdjustWeightsResponse } }
+      if (axiosError.response?.data) {
+        logger.warn('Python JD /adjust-weights returned error response', { data: axiosError.response.data })
+        return axiosError.response.data
+      }
       logger.error('Python JD /adjust-weights failed', { error })
       throw new AppError('Python service unavailable', 503)
     }

@@ -122,7 +122,7 @@ export const jdController = {
 
   async updateWeightage(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jd_id, user_command, field_values, current_weights, company_info } = req.body
+      const { jd_id, user_command, field_values, current_weights, company_info, force_override, conversation_history } = req.body
       const userId = req.userId!
 
       const data = await jdService.updateWeightage({
@@ -131,8 +131,28 @@ export const jdController = {
         fieldValues: field_values,
         currentWeights: current_weights,
         companyInfo: company_info,
+        forceOverride: force_override,
+        conversationHistory: conversation_history,
         userId,
       })
+
+      if (!data.success) {
+        res.status(200).json({
+          success: false,
+          message: (data as Record<string, unknown> & { error?: { message?: string } }).error?.message ?? 'Failed to update JD weightage',
+          data,
+        })
+        return
+      }
+
+      if (!data.weights_updated) {
+        res.status(200).json({
+          success: false,
+          message: (data.response as string) ?? 'Weightage could not be updated based on your command',
+          data,
+        })
+        return
+      }
 
       res.status(200).json({
         success: true,
@@ -186,9 +206,17 @@ export const jdController = {
   async getAllJDs(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.tenantId!
-      const { job_title_id, seniority_id } = req.query as unknown as GetAllJdsDto
+      const { job_title_id, seniority_id, page, page_size, sort_by, sort_order } = req.query as unknown as GetAllJdsDto
 
-      const data = await jdService.getAllJDs(companyId, job_title_id, seniority_id)
+      const data = await jdService.getAllJDs({
+        companyId,
+        jobTitleId: job_title_id,
+        seniorityId: seniority_id,
+        page,
+        pageSize: page_size,
+        sortBy: sort_by,
+        sortOrder: sort_order,
+      })
 
       res.status(200).json({
         success: true,
