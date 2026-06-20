@@ -1,12 +1,16 @@
 import type { Response, NextFunction } from 'express'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
+import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto } from './schemas/candidate.schema'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, GetCandidateListDto } from './schemas/candidate.schema'
 
 export const candidateController = {
   async uploadResumes(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
       const positionTitle = req.body?.position_title as string | undefined
       if (!positionTitle || !positionTitle.trim()) {
         throw new AppError('position_title is required', 400)
@@ -19,10 +23,11 @@ export const candidateController = {
 
       const result = await candidateService.uploadResumes(files, positionTitle.trim())
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'RESUMES_UPLOADED',
         message: result.status === 'partial' ? 'Some files are invalid' : 'Resumes extracted successfully',
         data: result,
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -31,6 +36,9 @@ export const candidateController = {
 
   async selectCandidateFiles(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
       const positionTitle = req.body?.position_title as string | undefined
       if (!positionTitle || !positionTitle.trim()) {
         throw new AppError('position_title is required', 400)
@@ -43,10 +51,11 @@ export const candidateController = {
 
       const result = await candidateService.selectCandidateFiles(files, positionTitle.trim())
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'CANDIDATE_FILES_SELECTED',
         message: 'Candidate files extracted successfully',
         data: result,
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -55,22 +64,26 @@ export const candidateController = {
 
   async saveCandidates(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jd_id, created_by, candidates } = req.body as SaveCandidatesDto
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
 
-      const { savedCount } = await candidateService.saveCandidates(
+      const { jd_id, candidates } = req.body as SaveCandidatesDto
+
+      const { savedCount, candidateIds } = await candidateService.saveCandidates(
         jd_id,
-        created_by,
+        userId,
         candidates as Record<string, unknown>[]
       )
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'CANDIDATES_SAVED',
         message: 'Candidates saved successfully',
         data: {
           status: 'success',
           saved_count: savedCount,
-          message: 'Candidates saved successfully',
+          candidate_ids: candidateIds,
         },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -79,6 +92,9 @@ export const candidateController = {
 
   async getCandidateDetailsById(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
       const candidateId = parseInt(req.params.id as string, 10)
       if (isNaN(candidateId) || candidateId <= 0) {
         throw new AppError('Invalid candidate ID', 400)
@@ -86,24 +102,29 @@ export const candidateController = {
 
       const data = await candidateService.getCandidateDetailsById(candidateId)
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'CANDIDATE_DETAILS_FETCHED',
         message: 'Candidate details fetched successfully',
         data,
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
     }
   },
 
-  async getFeedbackTypes(_req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  async getFeedbackTypes(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
       const list = await candidateService.getFeedbackTypes()
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'FEEDBACK_TYPES_FETCHED',
         message: 'Feedback types fetched successfully',
         data: list,
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -112,32 +133,76 @@ export const candidateController = {
 
   async saveCandidateFeedback(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { candidate_id, feedback_type_id, user_feedback, created_by } = req.body as SaveCandidateFeedbackDto
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { candidate_id, feedback_type_id, user_feedback } = req.body as SaveCandidateFeedbackDto
 
       await candidateService.saveCandidateFeedback({
         candidateId:    candidate_id,
         feedbackTypeId: feedback_type_id,
         userFeedback:   user_feedback,
-        createdBy:      created_by,
+        createdBy:      userId,
       })
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'FEEDBACK_SAVED',
         message: 'Feedback saved successfully',
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
     }
   },
 
-  async getJDDropdown(_req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  async getCandidateList(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { jd_id, search_text, verdict, experience_range, page, page_size } = req.query as unknown as GetCandidateListDto
+
+      const { summary, candidates, totalCount, totalPages } = await candidateService.getCandidateList({
+        jdId:             jd_id,
+        searchText:       search_text,
+        verdict:          verdict,
+        experienceRange:  experience_range,
+        page:             page ?? 1,
+        pageSize:         page_size ?? 20,
+      })
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_LIST_FETCHED',
+        message: 'Candidate list fetched successfully',
+        data: {
+          summary,
+          candidates,
+          pagination: {
+            total_count: totalCount,
+            page:        page ?? 1,
+            page_size:   page_size ?? 20,
+            total_pages: totalPages,
+          },
+        },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getJDDropdown(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
       const list = await candidateService.getJDDropdown()
 
-      res.status(200).json({
-        success: true,
+      sendSuccess(res, {
+        code: 'JD_DROPDOWN_FETCHED',
         message: 'JD dropdown fetched successfully',
         data: list,
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)
@@ -146,14 +211,18 @@ export const candidateController = {
 
   async updateCandidateScore(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { jd_id, created_by } = req.body as UpdateCandidateScoreDto
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
 
-      const result = await candidateService.updateCandidateScore(jd_id, created_by)
+      const { jd_id, candidate_ids } = req.body as UpdateCandidateScoreDto
 
-      res.status(200).json({
-        success: true,
+      const result = await candidateService.updateCandidateScore(jd_id, candidate_ids, userId)
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_SCORES_UPDATED',
         message: 'Candidate scores updated successfully',
         data: { total_scored: result.totalScored },
+        requestId: req.traceId,
       })
     } catch (error) {
       next(error)

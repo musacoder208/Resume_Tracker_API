@@ -7,5 +7,6 @@ const router = Router()
 router.use(authMiddleware)
 
 router.get('/master-data', commonController.getMasterData)
+router.get('/module-id', commonController.getModuleIdByCode)
 
 export default router

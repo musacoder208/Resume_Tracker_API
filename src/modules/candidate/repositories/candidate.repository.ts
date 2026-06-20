@@ -38,7 +38,6 @@ export const candidateRepository = {
     technicalSkills: string[]
     coreSkills: string[]
     softSkills: string[]
-    responsibilities: string[]
     createdBy: number
   }): Promise<number> {
     try {
@@ -46,7 +45,7 @@ export const candidateRepository = {
         `SELECT mechsoft.add_update_candidate_details(
           $1, $2, $3, $4, $5, $6, $7, $8::text[],
           $9, $10, $11, $12, $13, $14::jsonb,
-          $15::jsonb, $16::jsonb, $17::text[], $18::text[], $19::text[], $20::text[], $21
+          $15::jsonb, $16::jsonb, $17::text[], $18::text[], $19::text[], $20
         ) AS candidate_id`,
         [
           params.jdId,
@@ -68,7 +67,6 @@ export const candidateRepository = {
           params.technicalSkills,
           params.coreSkills,
           params.softSkills,
-          params.responsibilities,
           params.createdBy,
         ]
       )
@@ -108,16 +106,62 @@ export const candidateRepository = {
     }
   },
 
-  async getCandidatesForScoring(jdId: number): Promise<Record<string, unknown>[]> {
+  async getCandidateList(params: {
+    jdId?: number
+    searchText?: string
+    verdict?: string
+    experienceRange?: string
+    page: number
+    pageSize: number
+  }): Promise<{ summary: Record<string, unknown>; totalCount: number; candidates: Record<string, unknown>[] }> {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_get_candidates_for_scoring($1) AS candidates',
-        [jdId]
+        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6) AS result',
+        [
+          params.jdId            ?? null,
+          params.searchText      ?? null,
+          params.verdict         ?? null,
+          params.experienceRange ?? null,
+          params.page,
+          params.pageSize,
+        ]
+      )
+      const raw = result.rows[0]?.result as Record<string, unknown> ?? {}
+      return {
+        summary:    (raw.summary    as Record<string, unknown>) ?? {},
+        totalCount: (raw.total_count as number) ?? 0,
+        candidates: Array.isArray(raw.candidates) ? (raw.candidates as Record<string, unknown>[]) : [],
+      }
+    } catch (error) {
+      logger.error('DB error in getCandidateList', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getCandidatesForScoring(jdId: number, candidateIds: number[]): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_candidates_for_scoring($1, $2::bigint[]) AS candidates',
+        [jdId, candidateIds]
       )
       const candidates = result.rows[0]?.candidates
       return Array.isArray(candidates) ? candidates : []
     } catch (error) {
       logger.error('DB error in getCandidatesForScoring', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getCandidatesByIds(jdId: number, candidateIds: number[]): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_candidates_by_ids($1, $2::int[]) AS candidates',
+        [jdId, candidateIds]
+      )
+      const candidates = result.rows[0]?.candidates
+      return Array.isArray(candidates) ? candidates : []
+    } catch (error) {
+      logger.error('DB error in getCandidatesByIds', { error })
       throw new AppError('Database error', 500)
     }
   },

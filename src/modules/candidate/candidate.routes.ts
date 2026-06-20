@@ -2,8 +2,8 @@ import path from 'path'
 import { Router } from 'express'
 import multer from 'multer'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
-import { validate } from '@shared/validators/validate'
-import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema } from './schemas/candidate.schema'
+import { validate, validateQuery } from '@shared/validators/validate'
+import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, getCandidateListSchema } from './schemas/candidate.schema'
 import { candidateController } from './candidate.controller'
 
 const storage = multer.diskStorage({
@@ -18,14 +18,16 @@ const storage = multer.diskStorage({
 const upload = multer({ storage })
 
 const router = Router()
+router.use(authMiddleware)
 
-router.post('/uploadResumes', authMiddleware, upload.array('files'), candidateController.uploadResumes)
-router.post('/selectCandidateFiles', authMiddleware, upload.array('files'), candidateController.selectCandidateFiles)
-router.post('/saveCandidates', authMiddleware, validate(saveCandidatesSchema), candidateController.saveCandidates)
-router.get('/getCandidateDetails/:id', authMiddleware, candidateController.getCandidateDetailsById)
-router.get('/getFeedbackTypes', authMiddleware, candidateController.getFeedbackTypes)
-router.post('/saveCandidateFeedback', authMiddleware, validate(saveCandidateFeedbackSchema), candidateController.saveCandidateFeedback)
-router.get('/getJDDropdown', authMiddleware, candidateController.getJDDropdown)
-router.post('/updateCandidateScore', authMiddleware, validate(updateCandidateScoreSchema), candidateController.updateCandidateScore)
+router.post('/uploadResumes', upload.array('files'), candidateController.uploadResumes)
+router.post('/selectCandidateFiles', upload.array('files'), candidateController.selectCandidateFiles)
+router.post('/saveCandidates', validate(saveCandidatesSchema), candidateController.saveCandidates)
+router.get('/getCandidateList', validateQuery(getCandidateListSchema), candidateController.getCandidateList)
+router.get('/getCandidateDetails/:id', candidateController.getCandidateDetailsById)
+router.get('/getFeedbackTypes', candidateController.getFeedbackTypes)
+router.post('/saveCandidateFeedback', validate(saveCandidateFeedbackSchema), candidateController.saveCandidateFeedback)
+router.get('/getJDDropdown', candidateController.getJDDropdown)
+router.post('/updateCandidateScore', validate(updateCandidateScoreSchema), candidateController.updateCandidateScore)
 
 export default router

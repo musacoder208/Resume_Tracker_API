@@ -26,6 +26,7 @@ export interface GroupBreakdown {
   weight: number
   penalty_factor: number
   final_contribution: number
+  net_contribution: number
   missing_required: string[]
   present_required: string[]
   optional_present: string[]
@@ -39,6 +40,7 @@ export interface ScoreResult {
   constraint_effects: unknown[]
   hard_filter_failed: boolean
   final_score: number
+  net_contribution: number
   verdict: string
   group_breakdown: Record<string, GroupBreakdown>
   candidate_id: string
@@ -70,7 +72,12 @@ export const resumeExtractClient = {
 
       logger.info('Python resume extraction called', { fileCount: files.length, positionTitle })
 
-      return response.data.results ?? []
+      const raw = response.data as unknown
+      if (Array.isArray(raw)) return raw as ExtractedResumeRaw[]
+      if (raw && typeof raw === 'object' && Array.isArray((raw as Record<string, unknown>).results)) {
+        return (raw as { results: ExtractedResumeRaw[] }).results
+      }
+      return [raw as ExtractedResumeRaw]
     } catch (error) {
       logger.error('Python resume extraction failed', { error })
       throw new AppError('Resume extraction service unavailable', 503)

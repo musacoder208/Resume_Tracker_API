@@ -1,7 +1,16 @@
+import fs from 'fs'
 import { resumeExtractClient, ExtractedResumeRaw } from '../clients/resumeExtract.client'
 import { candidateRepository } from '../repositories/candidate.repository'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
+
+function cleanupFiles(files: Express.Multer.File[]): void {
+  for (const file of files) {
+    fs.unlink(file.path, (err) => {
+      if (err) logger.warn('Failed to delete temp file', { path: file.path, err })
+    })
+  }
+}
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx']
 const MIN_FILE_SIZE_BYTES = 100
@@ -13,9 +22,9 @@ interface ValidFile {
 }
 
 interface ExtractResult {
-  successExtraction: ExtractedResumeRaw[]
-  duplicate: Array<{ filename: string; reason: string }>
-  incomplete: Array<{ filename: string; reason: string }>
+  successExtraction: Array<ExtractedResumeRaw & { isSelected: boolean }>
+  duplicate: Array<ExtractedResumeRaw & { reason: string; isSelected: boolean }>
+  incomplete: Array<ExtractedResumeRaw & { reason: string; isSelected: boolean }>
 }
 
 function getExtension(filename: string): string {
@@ -50,19 +59,19 @@ function validateFiles(files: Express.Multer.File[]): {
 }
 
 async function processExtracted(rawItems: ExtractedResumeRaw[]): Promise<ExtractResult> {
-  const successExtraction: ExtractedResumeRaw[] = []
-  const duplicate: Array<{ filename: string; reason: string }> = []
-  const incomplete: Array<{ filename: string; reason: string }> = []
+  const successExtraction: Array<ExtractedResumeRaw & { isSelected: boolean }> = []
+  const duplicate: Array<ExtractedResumeRaw & { reason: string; isSelected: boolean }> = []
+  const incomplete: Array<ExtractedResumeRaw & { reason: string; isSelected: boolean }> = []
 
   // Step a: filter by status and position_relevance
   const valid = rawItems.filter((item) => {
     if (item.status === 'incomplete' || item.status === 'failed') {
-      incomplete.push({ filename: item.filename, reason: 'Incomplete resume data' })
+      incomplete.push({ ...item, reason: 'Incomplete resume data', isSelected: false })
       return false
     }
 
     if (item.status === 'success' && item.position_relevance?.match === false) {
-      incomplete.push({ filename: item.filename, reason: item.position_relevance.reason })
+      incomplete.push({ ...item, reason: item.position_relevance.reason, isSelected: false })
       return false
     }
 
@@ -82,7 +91,7 @@ async function processExtracted(rawItems: ExtractedResumeRaw[]): Promise<Extract
     ].join('|')
 
     if (batchSeen.has(key)) {
-      duplicate.push({ filename: item.filename, reason: 'Duplicate within uploaded batch' })
+      duplicate.push({ ...item, reason: 'Duplicate within uploaded batch', isSelected: false })
     } else {
       batchSeen.set(key, true)
       batchUnique.push(item)
@@ -99,9 +108,9 @@ async function processExtracted(rawItems: ExtractedResumeRaw[]): Promise<Extract
     const exists = await candidateRepository.checkDuplicate(fullName, email, phone)
 
     if (exists) {
-      duplicate.push({ filename: item.filename, reason: 'Already exists in system' })
+      duplicate.push({ ...item, reason: 'Already exists in system', isSelected: false })
     } else {
-      successExtraction.push(item)
+      successExtraction.push({ ...item, isSelected: true })
     }
   }
 
@@ -129,6 +138,7 @@ export const candidateService = {
 
     const filePathMap = new Map(valid.map((v) => [v.file.originalname, v.file.path]))
     const rawItems = await resumeExtractClient.extractResumes(valid.map((v) => v.file), positionTitle)
+    cleanupFiles(valid.map((v) => v.file))
     rawItems.forEach((item) => { item.resume_file_path = filePathMap.get(item.filename) ?? null })
     const result = await processExtracted(rawItems)
 
@@ -147,6 +157,7 @@ export const candidateService = {
   ): Promise<{ status: 'extracted' } & ExtractResult> {
     const filePathMap = new Map(files.map((f) => [f.originalname, f.path]))
     const rawItems = await resumeExtractClient.extractResumes(files, positionTitle)
+    cleanupFiles(files)
     rawItems.forEach((item) => { item.resume_file_path = filePathMap.get(item.filename) ?? null })
     const result = await processExtracted(rawItems)
 
@@ -163,8 +174,8 @@ export const candidateService = {
     jdId: number,
     createdBy: number,
     candidates: Record<string, unknown>[]
-  ): Promise<{ savedCount: number }> {
-    let savedCount = 0
+  ): Promise<{ savedCount: number; candidateIds: number[] }> {
+    const candidateIds: number[] = []
 
     for (const candidate of candidates) {
       const pi = (candidate.personal_info ?? {}) as Record<string, { value: unknown }>
@@ -175,9 +186,8 @@ export const candidateService = {
       const technicalSkills = ((pro.technical_stack_and_tools as { value: string[] } | undefined)?.value ?? [])
       const coreSkills = ((pro.core_skills as { value: string[] } | undefined)?.value ?? [])
       const softSkills = ((pro.soft_skills as { value: string[] } | undefined)?.value ?? [])
-      const responsibilities = ((pro.key_responsibilities as { value: string[] } | undefined)?.value ?? [])
 
-      await candidateRepository.saveCandidateDetails({
+      const candidateId = await candidateRepository.saveCandidateDetails({
         jdId,
         fullName: (pi.full_name?.value as string) ?? '',
         email: (pi.email?.value as string) ?? '',
@@ -197,15 +207,14 @@ export const candidateService = {
         technicalSkills,
         coreSkills,
         softSkills,
-        responsibilities,
         createdBy,
       })
 
-      savedCount++
+      candidateIds.push(candidateId)
     }
 
-    logger.info('Candidates saved', { jdId, savedCount })
-    return { savedCount }
+    logger.info('Candidates saved', { jdId, savedCount: candidateIds.length })
+    return { savedCount: candidateIds.length, candidateIds }
   },
 
   async getFeedbackTypes(): Promise<Array<{ feedback_type_id: number; feedback_type: string }>> {
@@ -233,6 +242,25 @@ export const candidateService = {
     return details
   },
 
+  async getCandidateList(params: {
+    jdId?: number
+    searchText?: string
+    verdict?: string
+    experienceRange?: string
+    page: number
+    pageSize: number
+  }): Promise<{
+    summary: Record<string, unknown>
+    candidates: Record<string, unknown>[]
+    totalCount: number
+    totalPages: number
+  }> {
+    const data = await candidateRepository.getCandidateList(params)
+    const totalPages = Math.ceil(data.totalCount / params.pageSize)
+    logger.info('Candidate list fetched', { count: data.candidates.length, totalCount: data.totalCount, ...params })
+    return { ...data, totalPages }
+  },
+
   async getJDDropdown(): Promise<Array<{ jd_id: number; label: string }>> {
     const list = await candidateRepository.getJDDropdown()
     logger.info('JD dropdown fetched', { count: list.length })
@@ -241,6 +269,7 @@ export const candidateService = {
 
   async updateCandidateScore(
     jdId: number,
+    candidateIds: number[],
     createdBy: number
   ): Promise<{ totalScored: number }> {
     // Step 1: Get JD weightage and extract weights object
@@ -250,10 +279,10 @@ export const candidateService = {
     }
     const weightsOnly = (weightageRaw.weights as Record<string, unknown>) ?? weightageRaw
 
-    // Step 2: Get all candidates for this JD (professional_info + location + candidate_id)
-    const candidates = await candidateRepository.getCandidatesForScoring(jdId)
+    // Step 2: Get only the requested candidates for this JD from DB
+    const candidates = await candidateRepository.getCandidatesForScoring(jdId, candidateIds)
     if (!candidates.length) {
-      throw new AppError('No candidates found for this JD', 404)
+      throw new AppError('No candidates found for the provided IDs', 404)
     }
 
     // Step 3: Call Python scoring API

@@ -76,3 +76,31 @@ $$;
 --    Drop the old function if it exists.
 -- ─────────────────────────────────────────────────────────────
 DROP FUNCTION IF EXISTS public.fn_get_master_data_list(INT);
+
+
+-- ─────────────────────────────────────────────────────────────
+-- 3. Get module_id by module_code
+--    Returns module_id from public.mst_modules using module_code
+-- ─────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.fn_get_module_id_by_code(
+  p_module_code VARCHAR
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_module_id INT;
+BEGIN
+  SELECT module_id INTO v_module_id
+  FROM public.mst_modules
+  WHERE module_code = p_module_code
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('module_id', NULL);
+  END IF;
+
+  RETURN jsonb_build_object('module_id', v_module_id);
+END;
+$$;
+

@@ -3,6 +3,20 @@ import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
 
 export const commonService = {
+  async getModuleIdByCode(moduleCode: string): Promise<{ module_id: number | null }> {
+    try {
+      const result = await pool.query(
+        'SELECT public.fn_get_module_id_by_code($1) AS result',
+        [moduleCode]
+      )
+      const data = result.rows[0]?.result as { module_id: number | null } ?? { module_id: null }
+      return data
+    } catch (error) {
+      logger.error('DB error in getModuleIdByCode', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
   async getCompanyRegistrationDetails(companyId: number) {
     try {
       const result = await pool.query(
@@ -28,6 +42,7 @@ export const commonService = {
         modules,
         seniorities,
         statuses,
+        feedbackStatuses,
       ] = await Promise.all([
         pool.query(
           'SELECT id, industry_type_name AS name FROM public.mst_industry_type WHERE is_active = TRUE ORDER BY industry_type_name'
@@ -65,18 +80,32 @@ export const commonService = {
         pool.query(
           'SELECT status_id AS id, status_name AS name, module_id AS "moduleId" FROM public.mst_status ORDER BY status_name'
         ),
+        pool.query(
+          'SELECT id, status_name AS name FROM public.mst_feedbackstatus ORDER BY id'
+        ),
       ])
 
+      const statusesByModule = statuses.rows.reduce<Record<number, { id: number; name: string }[]>>(
+        (acc, row) => {
+          const mid = row.moduleId as number
+          if (!acc[mid]) acc[mid] = []
+          acc[mid].push({ id: row.id as number, name: row.name as string })
+          return acc
+        },
+        {}
+      )
+
       return {
-        industryTypes: industryTypes.rows,
-        companySizes:  companySizes.rows,
-        countries:     countries.rows,
-        states:        states.rows,
-        cities:        cities.rows,
-        jobTitles:     jobTitles.rows,
-        modules:       modules.rows,
-        seniorities:   seniorities.rows,
-        statuses:      statuses.rows,
+        industryTypes:    industryTypes.rows,
+        companySizes:     companySizes.rows,
+        countries:        countries.rows,
+        states:           states.rows,
+        cities:           cities.rows,
+        jobTitles:        jobTitles.rows,
+        modules:          modules.rows,
+        seniorities:      seniorities.rows,
+        statuses:         statusesByModule,
+        feedbackStatuses: feedbackStatuses.rows,
       }
     } catch (error) {
       logger.error('DB error in getMasterDataList', { error })

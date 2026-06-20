@@ -63,11 +63,11 @@ $$;
 --    and returns the new candidate_id.
 --
 --    Inserts into:
---      tbl_candidates_header        (1 row)
---      tbl_candidate_education      (1 row per education entry)
---      tbl_candidate_experience     (1 row per experience entry)
---      tbl_candidate_skills         (3 rows: technical / core / soft)
---      tbl_candidate_responsibilities (1 row)
+--      tbl_candidates_header    (1 row)
+--      tbl_candidate_education  (1 row per education entry)
+--      tbl_candidate_experience (1 row per experience entry,
+--                                responsibilities saved per entry)
+--      tbl_candidate_skills     (3 rows: technical / core / soft)
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION mechsoft.add_update_candidate_details(
   p_jd_id              BIGINT,
@@ -89,7 +89,6 @@ CREATE OR REPLACE FUNCTION mechsoft.add_update_candidate_details(
   p_technical_skills   TEXT[],
   p_core_skills        TEXT[],
   p_soft_skills        TEXT[],
-  p_responsibilities   TEXT[],
   p_created_by         BIGINT
 )
 RETURNS BIGINT
@@ -172,7 +171,7 @@ BEGIN
     );
   END LOOP;
 
-  -- 3. Insert experience entries
+  -- 3. Insert experience entries (with responsibilities per company)
   FOR v_exp IN SELECT * FROM jsonb_array_elements(p_experience)
   LOOP
     INSERT INTO mechsoft.tbl_candidate_experience (
@@ -183,6 +182,7 @@ BEGIN
       start_date,
       end_date,
       company_size,
+      responsibilities,
       is_deleted,
       created_by,
       created_date,
@@ -197,6 +197,7 @@ BEGIN
       v_exp->>'start_date',
       v_exp->>'end_date',
       v_exp->>'company_size',
+      ARRAY(SELECT jsonb_array_elements_text(COALESCE(v_exp->'key_responsibilities', '[]'::JSONB))),
       FALSE,
       p_created_by,
       NOW(),
@@ -221,26 +222,6 @@ BEGIN
     (v_candidate_id, 'core',      p_core_skills,      FALSE, p_created_by, NOW(), NULL, NULL),
     (v_candidate_id, 'soft',      p_soft_skills,      FALSE, p_created_by, NOW(), NULL, NULL);
 
-  -- 5. Insert responsibilities
-  INSERT INTO mechsoft.tbl_candidate_responsibilities (
-    candidate_id,
-    responsibilities,
-    is_deleted,
-    created_by,
-    created_date,
-    modified_by,
-    modified_date
-  )
-  VALUES (
-    v_candidate_id,
-    p_responsibilities,
-    FALSE,
-    p_created_by,
-    NOW(),
-    NULL,
-    NULL
-  );
-
   RETURN v_candidate_id;
 END;
 $$;
@@ -260,15 +241,14 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_candidate        RECORD;
-  v_score            RECORD;
-  v_education        JSONB;
-  v_experience       JSONB;
-  v_technical        TEXT[];
-  v_core             TEXT[];
-  v_soft             TEXT[];
-  v_responsibilities TEXT[];
-  v_group_breakdown  JSONB;
+  v_candidate       RECORD;
+  v_score           RECORD;
+  v_education       JSONB;
+  v_experience      JSONB;
+  v_technical       TEXT[];
+  v_core            TEXT[];
+  v_soft            TEXT[];
+  v_group_breakdown JSONB;
 BEGIN
   -- 1. Candidate header
   SELECT * INTO v_candidate
@@ -295,16 +275,16 @@ BEGIN
   WHERE candidate_id = p_candidate_id
     AND is_deleted   = FALSE;
 
-  -- 3. Experience
+  -- 3. Experience (with responsibilities per company)
   SELECT COALESCE(
     jsonb_agg(
       jsonb_build_object(
-        'company_name',  company_name,
-        'job_title',     job_title,
-        'work_location', work_location,
-        'start_date',    start_date,
-        'end_date',      end_date,
-        'company_size',  company_size
+        'company_name',    company_name,
+        'job_title',       job_title,
+        'work_location',   work_location,
+        'start_date',      start_date,
+        'end_date',        end_date,
+        'responsibilities', COALESCE(to_jsonb(responsibilities), '[]'::JSONB)
       )
     ), '[]'::JSONB
   )
@@ -332,25 +312,19 @@ BEGIN
     AND skill_type   = 'soft'
     AND is_deleted   = FALSE;
 
-  -- 5. Responsibilities
-  SELECT responsibilities INTO v_responsibilities
-  FROM mechsoft.tbl_candidate_responsibilities
-  WHERE candidate_id = p_candidate_id
-    AND is_deleted   = FALSE;
-
-  -- 6. Score header
+  -- 5. Score header (using candidate_id)
   SELECT * INTO v_score
   FROM mechsoft.tbl_candidate_score_header
   WHERE candidate_id = p_candidate_id
-    AND is_deleted   = FALSE
   LIMIT 1;
 
-  -- 7. Score group breakdown
-  IF v_score IS NOT NULL THEN
+  -- 6. Score group breakdown (using score_id from step 5)
+  IF FOUND THEN
     SELECT COALESCE(
-      jsonb_object_agg(
-        group_key,
+      jsonb_agg(
         jsonb_build_object(
+          'score_id',            score_id,
+          'group_key',           group_key,
           'group_score',         group_score,
           'weight',              weight,
           'penalty_factor',      penalty_factor,
@@ -361,18 +335,17 @@ BEGIN
           'optional_missing',    optional_missing,
           'llm_classifications', llm_classifications
         )
-      ), '{}'::JSONB
+      ), '[]'::JSONB
     )
     INTO v_group_breakdown
     FROM mechsoft.tbl_candidate_score_group
-    WHERE score_id  = v_score.score_id
-      AND is_deleted = FALSE;
+    WHERE score_id = v_score.score_id;
   END IF;
 
-  -- 8. Build and return final JSON
+  -- 7. Build and return final JSON
   RETURN jsonb_build_object(
-    'candidate_id',    v_candidate.candidate_id,
-    'personal_info',   jsonb_build_object(
+    'candidate_id',   v_candidate.candidate_id,
+    'personal_info',  jsonb_build_object(
       'full_name',       v_candidate.full_name,
       'email',           v_candidate.email,
       'phone',           v_candidate.phone,
@@ -390,21 +363,21 @@ BEGIN
       'file_name', v_candidate.resume_file_name,
       'file_path', v_candidate.resume_file_path
     ),
-    'education',        v_education,
-    'experience',       v_experience,
-    'skills',           jsonb_build_object(
+    'education',  v_education,
+    'experience', v_experience,
+    'skills',     jsonb_build_object(
       'technical', COALESCE(to_jsonb(v_technical), '[]'::JSONB),
       'core',      COALESCE(to_jsonb(v_core),      '[]'::JSONB),
       'soft',      COALESCE(to_jsonb(v_soft),       '[]'::JSONB)
     ),
-    'responsibilities', COALESCE(to_jsonb(v_responsibilities), '[]'::JSONB),
     'score', CASE
-      WHEN v_score IS NULL THEN NULL
+      WHEN v_score.score_id IS NULL THEN NULL
       ELSE jsonb_build_object(
+        'score_id',        v_score.score_id,
         'base_score',      v_score.base_score,
         'final_score',     v_score.final_score,
         'verdict',         v_score.verdict,
-        'group_breakdown', COALESCE(v_group_breakdown, '{}'::JSONB)
+        'group_breakdown', COALESCE(v_group_breakdown, '[]'::JSONB)
       )
     END,
     'meta', jsonb_build_object(
@@ -509,9 +482,11 @@ $$;
 --    Returns a JSONB array of candidate scoring payloads.
 --    Each item contains: candidate_id, location (from
 --    personal_info), and all professional_info fields merged.
+--    p_candidate_ids filters to specific candidates within JD.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION mechsoft.fn_get_candidates_for_scoring(
-  p_jd_id BIGINT
+  p_jd_id          BIGINT,
+  p_candidate_ids  BIGINT[]
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -529,10 +504,175 @@ BEGIN
   )
   INTO v_result
   FROM mechsoft.tbl_candidates_header
-  WHERE jd_id      = p_jd_id
-    AND is_deleted = FALSE;
+  WHERE jd_id        = p_jd_id
+    AND candidate_id = ANY(p_candidate_ids)
+    AND is_deleted   = FALSE;
 
   RETURN COALESCE(v_result, '[]'::JSONB);
+END;
+$$;
+
+
+-- ------------------------------------------------------------
+-- fn_get_candidate_list
+--    Returns a JSONB object with:
+--      summary     - landing page stats (scoped to p_jd_id)
+--      total_count - total matching records (for pagination)
+--      candidates  - current page records only
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_get_candidate_list(
+  p_jd_id            BIGINT  DEFAULT NULL,
+  p_search_text      TEXT    DEFAULT NULL,
+  p_verdict          TEXT    DEFAULT NULL,
+  p_experience_range TEXT    DEFAULT NULL,
+  p_page             BIGINT  DEFAULT 1,
+  p_page_size        BIGINT  DEFAULT 10
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_candidates  JSONB;
+  v_summary     JSONB;
+  v_total_count BIGINT;
+  v_offset      BIGINT;
+BEGIN
+  v_offset := (p_page - 1) * p_page_size;
+
+  -- ── 1. Total count (all filters, no LIMIT) ────────────────────
+  SELECT COUNT(DISTINCT ch.candidate_id)
+  INTO   v_total_count
+  FROM   mechsoft.tbl_candidates_header ch
+  LEFT JOIN (
+    SELECT DISTINCT ON (candidate_id)
+           candidate_id, verdict
+    FROM   mechsoft.tbl_candidate_score_header
+    WHERE  is_deleted = FALSE
+    ORDER  BY candidate_id, created_date DESC
+  ) sc ON sc.candidate_id = ch.candidate_id
+  WHERE ch.is_deleted = FALSE
+    AND (p_jd_id IS NULL OR ch.jd_id = p_jd_id)
+    AND (
+      p_search_text IS NULL
+      OR ch.full_name ILIKE '%' || p_search_text || '%'
+      OR ch.email     ILIKE '%' || p_search_text || '%'
+    )
+    AND (p_verdict IS NULL OR sc.verdict = p_verdict)
+    AND (
+      p_experience_range IS NULL OR
+      CASE p_experience_range
+        WHEN '0-1' THEN ch.total_experience >= 0 AND ch.total_experience < 1
+        WHEN '1-3' THEN ch.total_experience >= 1 AND ch.total_experience < 3
+        WHEN '3-5' THEN ch.total_experience >= 3 AND ch.total_experience < 5
+        WHEN '5-8' THEN ch.total_experience >= 5 AND ch.total_experience < 8
+        WHEN '8+'  THEN ch.total_experience >= 8
+        ELSE TRUE
+      END
+    );
+
+  -- ── 2. Paginated candidate list ───────────────────────────────
+  SELECT jsonb_agg(row)
+  INTO   v_candidates
+  FROM (
+    SELECT jsonb_build_object(
+      'candidate_id',      ch.candidate_id,
+      'jd_id',             ch.jd_id,
+      'full_name',         ch.full_name,
+      'email',             ch.email,
+      'phone',             ch.phone,
+      'location',          ch.location,
+      'current_job_title', ch.current_job_title,
+      'current_company',   ch.current_company,
+      'total_experience',  ch.total_experience,
+      'technical_skills',  COALESCE(sk.technical_skills, '[]'::JSONB),
+      'degree',            ed.degree,
+      'final_score',       sc.final_score,
+      'verdict',           sc.verdict
+    ) AS row
+    FROM mechsoft.tbl_candidates_header ch
+
+    LEFT JOIN (
+      SELECT   candidate_id,
+               jsonb_agg(skills ORDER BY skills) AS technical_skills
+      FROM     mechsoft.tbl_candidate_skills
+      WHERE    skill_type = 'technical'
+        AND    is_deleted = FALSE
+      GROUP BY candidate_id
+    ) sk ON sk.candidate_id = ch.candidate_id
+
+    LEFT JOIN (
+      SELECT DISTINCT ON (candidate_id)
+             candidate_id, degree
+      FROM   mechsoft.tbl_candidate_education
+      WHERE  is_deleted = FALSE
+      ORDER  BY candidate_id, education_id DESC
+    ) ed ON ed.candidate_id = ch.candidate_id
+
+    LEFT JOIN (
+      SELECT DISTINCT ON (candidate_id)
+             candidate_id, final_score, verdict
+      FROM   mechsoft.tbl_candidate_score_header
+      WHERE  is_deleted = FALSE
+      ORDER  BY candidate_id, created_date DESC
+    ) sc ON sc.candidate_id = ch.candidate_id
+
+    WHERE ch.is_deleted = FALSE
+      AND (p_jd_id IS NULL OR ch.jd_id = p_jd_id)
+      AND (
+        p_search_text IS NULL
+        OR ch.full_name ILIKE '%' || p_search_text || '%'
+        OR ch.email     ILIKE '%' || p_search_text || '%'
+      )
+      AND (p_verdict IS NULL OR sc.verdict = p_verdict)
+      AND (
+        p_experience_range IS NULL OR
+        CASE p_experience_range
+          WHEN '0-1' THEN ch.total_experience >= 0 AND ch.total_experience < 1
+          WHEN '1-3' THEN ch.total_experience >= 1 AND ch.total_experience < 3
+          WHEN '3-5' THEN ch.total_experience >= 3 AND ch.total_experience < 5
+          WHEN '5-8' THEN ch.total_experience >= 5 AND ch.total_experience < 8
+          WHEN '8+'  THEN ch.total_experience >= 8
+          ELSE TRUE
+        END
+      )
+    ORDER BY ch.candidate_id DESC
+    LIMIT  p_page_size
+    OFFSET v_offset
+  ) subq;
+
+  -- ── 3. Summary stats (jd_id filter only) ─────────────────────
+  SELECT jsonb_build_object(
+    'total_candidates',  COUNT(DISTINCT ch.candidate_id),
+    'strong_match',      COUNT(DISTINCT ch.candidate_id) FILTER (WHERE sc.verdict = 'Strong Match'),
+    'avg_match_score',   COALESCE(ROUND(AVG(sc.final_score)::NUMERIC, 2), 0),
+    'scored_candidates', COUNT(DISTINCT ch.candidate_id) FILTER (WHERE sc.candidate_id IS NOT NULL),
+    'pending_scoring',   COUNT(DISTINCT ch.candidate_id) FILTER (WHERE sc.candidate_id IS NULL),
+    'active_jds',        (
+                           SELECT COUNT(*)
+                           FROM   mechsoft.tbl_jd_header
+                           WHERE  is_deleted = FALSE
+                             AND  is_active  = TRUE
+                         )
+  )
+  INTO v_summary
+  FROM mechsoft.tbl_candidates_header ch
+  LEFT JOIN (
+    SELECT DISTINCT ON (candidate_id)
+           candidate_id, final_score, verdict
+    FROM   mechsoft.tbl_candidate_score_header
+    WHERE  is_deleted = FALSE
+    ORDER  BY candidate_id, created_date DESC
+  ) sc ON sc.candidate_id = ch.candidate_id
+  WHERE ch.is_deleted = FALSE
+    AND (p_jd_id IS NULL OR ch.jd_id = p_jd_id);
+
+  -- ── 4. Return combined result ─────────────────────────────────
+  RETURN jsonb_build_object(
+    'summary',     v_summary,
+    'total_count', v_total_count,
+    'candidates',  COALESCE(v_candidates, '[]'::JSONB)
+  );
+
 END;
 $$;
 
@@ -631,7 +771,7 @@ BEGIN
         (v_group_data ->> 'group_score')::NUMERIC,
         (v_group_data ->> 'weight')::NUMERIC,
         (v_group_data ->> 'penalty_factor')::NUMERIC,
-        (v_group_data ->> 'final_contribution')::NUMERIC,
+        (v_group_data ->> 'net_contribution')::NUMERIC,
         ARRAY(SELECT jsonb_array_elements_text(v_group_data -> 'missing_required')),
         ARRAY(SELECT jsonb_array_elements_text(v_group_data -> 'present_required')),
         ARRAY(SELECT jsonb_array_elements_text(v_group_data -> 'optional_present')),
