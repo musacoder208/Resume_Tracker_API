@@ -53,7 +53,11 @@ export interface ScoreResumeResponse {
 }
 
 export const resumeExtractClient = {
-  async extractResumes(files: Express.Multer.File[], positionTitle: string): Promise<ExtractedResumeRaw[]> {
+  async extractResumes(
+    files: Express.Multer.File[],
+    positionTitle: string,
+    onResult?: (result: ExtractedResumeRaw) => Promise<void>
+  ): Promise<ExtractedResumeRaw[]> {
     try {
       const form = new FormData()
       form.append('position_title', positionTitle)
@@ -64,20 +68,52 @@ export const resumeExtractClient = {
         })
       })
 
-      const response = await axios.post<{ status: string; total: number; results: ExtractedResumeRaw[] }>(
-        `${env.CANDIDATE_EXTRACT_API_URL}/extract-resume`,
+      const response = await axios.post(
+        `${env.CANDIDATE_EXTRACT_API_URL}/extract-resume-stream`,
         form,
-        { headers: form.getHeaders() }
+        { headers: form.getHeaders(), responseType: 'stream' }
       )
 
-      logger.info('Python resume extraction called', { fileCount: files.length, positionTitle })
+      logger.info('Python resume extraction stream started', { fileCount: files.length, positionTitle })
 
-      const raw = response.data as unknown
-      if (Array.isArray(raw)) return raw as ExtractedResumeRaw[]
-      if (raw && typeof raw === 'object' && Array.isArray((raw as Record<string, unknown>).results)) {
-        return (raw as { results: ExtractedResumeRaw[] }).results
-      }
-      return [raw as ExtractedResumeRaw]
+      return new Promise<ExtractedResumeRaw[]>((resolve, reject) => {
+        const results: ExtractedResumeRaw[] = []
+        let buffer = ''
+        let processingChain = Promise.resolve()
+
+        response.data.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString()
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed.startsWith('data:')) continue
+            const payload = trimmed.slice(5).trim()
+            if (payload === '[DONE]') continue
+            try {
+              const parsed = JSON.parse(payload) as ExtractedResumeRaw
+              results.push(parsed)
+              if (onResult) {
+                processingChain = processingChain.then(() => onResult(parsed))
+              }
+            } catch {
+              logger.warn(`Failed to parse SSE line: ${line}`)
+            }
+          }
+        })
+
+        response.data.on('end', () => {
+          processingChain.then(() => {
+            logger.info(`SSE extraction complete. Total parsed: ${results.length}`)
+            resolve(results)
+          }).catch(reject)
+        })
+
+        response.data.on('error', (err: Error) => {
+          reject(new AppError('Resume extraction service unavailable', 503))
+        })
+      })
     } catch (error) {
       logger.error('Python resume extraction failed', { error })
       throw new AppError('Resume extraction service unavailable', 503)

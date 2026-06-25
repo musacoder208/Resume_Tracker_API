@@ -11,12 +11,14 @@ let tempSessionId: string | null = null
 let tempJdId: number | null = null
 let tempNextQuestion: QANextQuestion | null = null
 let tempData: QADataBlob | null = null
+let tempTotalQuestionsCount: number | null = null
 
 function clearTempState(): void {
   tempSessionId = null
   tempJdId = null
   tempNextQuestion = null
   tempData = null
+  tempTotalQuestionsCount = null
 }
 
 // Edit QA session state — one active QA edit session at a time
@@ -38,7 +40,7 @@ export const jdController = {
       const  jdId  = req.body.jdId
       const dataBlob  = req.body.dataBlob
 
-      const { sessionId, nextQuestion, data } = await jdService.startJdSession(
+      const { sessionId, nextQuestion, data, totalQuestionsCount } = await jdService.startJdSession(
         companyId,
         userId,
         jdId ? jdId  : undefined,
@@ -49,6 +51,7 @@ export const jdController = {
       tempJdId = jdId ?? null
       tempNextQuestion = nextQuestion
       tempData = data
+      tempTotalQuestionsCount = totalQuestionsCount ?? null
 
       sendSuccess(res, {
         code: 'JD_SESSION_STARTED',
@@ -57,6 +60,7 @@ export const jdController = {
           session_id: tempSessionId,
           next_question: tempNextQuestion,
           data_blob: data,
+          total_questions_count: tempTotalQuestionsCount,
         },
         requestId: req.traceId,
       })
@@ -85,6 +89,7 @@ export const jdController = {
         nextQuestion: tempNextQuestion,
         data: tempData,
         jdId: tempJdId,
+        totalQuestionsCount: tempTotalQuestionsCount,
       })
 
       tempJdId = result.jdId
@@ -206,12 +211,13 @@ export const jdController = {
   async getAllJDs(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.tenantId!
-      const { job_title_id, seniority_id, page, page_size, sort_by, sort_order } = req.query as unknown as GetAllJdsDto
+      const { job_title_id, seniority_id, status_id, page, page_size, sort_by, sort_order } = req.query as unknown as GetAllJdsDto
 
       const data = await jdService.getAllJDs({
         companyId,
         jobTitleId: job_title_id,
         seniorityId: seniority_id,
+        statusId: status_id,
         page,
         pageSize: page_size,
         sortBy: sort_by,
@@ -292,6 +298,23 @@ export const jdController = {
         success: true,
         message: 'Edit QA session started',
         data: result.respondPayload,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async publishJd(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id } = req.body
+      const userId = req.userId!
+
+      const result = await jdService.publishJd({ jdId: jd_id, userId })
+
+      res.status(200).json({
+        success: result.published,
+        message: result.message,
+        data: null,
       })
     } catch (error) {
       next(error)

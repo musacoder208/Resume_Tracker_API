@@ -17,11 +17,12 @@ export const companyProfileRepository = {
     qaFieldKey: string | null = null,
     questionText: string | null = null,
     answerValue: string[] | null = null,
-    mode: string | null = null
+    mode: string | null = null,
+    totalQuestionsCount: number | null = null
   ) {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_add_update_company_profile($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::jsonb, $11, $12, $13::text[], $14) AS result',
+        'SELECT mechsoft.fn_add_update_company_profile($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::jsonb, $11, $12, $13::text[], $14, $15) AS result',
         [
           companyId,
           fieldKey,
@@ -37,6 +38,7 @@ export const companyProfileRepository = {
           questionText ?? null,
           answerValue ?? null,
           mode ?? null,
+          totalQuestionsCount ?? null,
         ]
       )
       return result.rows[0]?.result ?? null
@@ -167,13 +169,13 @@ export const companyProfileRepository = {
     }
   },
 
-  async checkProfileExists(companyId: number): Promise<{ exists: boolean; data: Record<string, unknown>; theory: string | null }> {
+  async checkProfileExists(companyId: number): Promise<{ exists: boolean; data: Record<string, unknown>; theory: string | null; total_questions_count: number | null }> {
     try {
       const result = await pool.query(
         'SELECT mechsoft.fn_check_profile_exists($1) AS result',
         [companyId]
       )
-      return result.rows[0]?.result ?? { exists: false, data: {}, theory: null }
+      return result.rows[0]?.result ?? { exists: false, data: {}, theory: null, total_questions_count: null }
     } catch (error) {
       console.error('RAW DB ERROR checkProfileExists:', (error as Error).message)
       logger.error('DB error in checkProfileExists', { error })

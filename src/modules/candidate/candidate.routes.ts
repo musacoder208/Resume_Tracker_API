@@ -21,6 +21,7 @@ const router = Router()
 router.use(authMiddleware)
 
 router.post('/uploadResumes', upload.array('files'), candidateController.uploadResumes)
+router.post('/uploadResumesStream', upload.array('files'), candidateController.uploadResumesStream)
 router.post('/selectCandidateFiles', upload.array('files'), candidateController.selectCandidateFiles)
 router.post('/saveCandidates', validate(saveCandidatesSchema), candidateController.saveCandidates)
 router.get('/getCandidateList', validateQuery(getCandidateListSchema), candidateController.getCandidateList)

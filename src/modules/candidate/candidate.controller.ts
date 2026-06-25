@@ -34,6 +34,38 @@ export const candidateController = {
     }
   },
 
+  async uploadResumesStream(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const positionTitle = req.body?.position_title as string | undefined
+      if (!positionTitle || !positionTitle.trim()) throw new AppError('position_title is required', 400)
+
+      const jdId = parseInt(req.body?.jd_id as string, 10)
+      if (isNaN(jdId) || jdId <= 0) throw new AppError('jd_id is required', 400)
+
+      const files = req.files as Express.Multer.File[] | undefined
+      if (!files || files.length === 0) throw new AppError('No files uploaded', 400)
+
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.flushHeaders()
+
+      const push = (data: Record<string, unknown>) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`)
+      }
+
+      await candidateService.uploadResumesStream(files, positionTitle.trim(), jdId, userId, push)
+
+      res.write('data: [DONE]\n\n')
+      res.end()
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async selectCandidateFiles(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.userId

@@ -32,12 +32,13 @@ export const jdRepository = {
     userId: number
     mode: string | null
     workModel: string | null
+    totalQuestionsCount: number | null
   }): Promise<number> {
     try {
       const result = await pool.query(
         `SELECT mechsoft.fn_add_update_jd(
           $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10::text[], $11::jsonb, $12, $13, $14, $15
+          $10::text[], $11::jsonb, $12, $13, $14, $15, $16
         ) AS jd_id`,
         [
           params.jdId,
@@ -55,6 +56,7 @@ export const jdRepository = {
           params.userId,
           params.mode,
           params.workModel,
+          params.totalQuestionsCount,
         ]
       )
       return result.rows[0]?.jd_id as number
@@ -88,10 +90,12 @@ export const jdRepository = {
     jobTitle: string | null
     sessionId: string
     statusName: string
+    statusCode: string
     theory: string | null
     dataBlob: Record<string, unknown> | null
     weightageJson: Record<string, unknown> | null
     isWeightage: boolean
+    totalQuestionsCount: number | null
   } | null> {
     try {
       const result = await pool.query(
@@ -102,16 +106,18 @@ export const jdRepository = {
 
       const row = result.rows[0]
       return {
-        jdId:          row.jd_id          as number,
-        jobTitleId:    row.job_title_id   as number,
-        seniorityId:   row.seniority_id   as number,
-        jobTitle:      row.job_title      as string | null,
-        sessionId:     row.session_id     as string,
-        statusName:    row.status_name    as string,
-        theory:        row.theory         as string | null,
-        dataBlob:      row.data_blob      as Record<string, unknown> | null,
-        weightageJson: row.weightage_json as Record<string, unknown> | null,
-        isWeightage:   row.is_weightage   as boolean,
+        jdId:                row.jd_id                 as number,
+        jobTitleId:          row.job_title_id           as number,
+        seniorityId:         row.seniority_id           as number,
+        jobTitle:            row.job_title              as string | null,
+        sessionId:           row.session_id             as string,
+        statusName:          row.status_name            as string,
+        statusCode:          row.status_code            as string,
+        theory:              row.theory                 as string | null,
+        dataBlob:            row.data_blob              as Record<string, unknown> | null,
+        weightageJson:       row.weightage_json         as Record<string, unknown> | null,
+        isWeightage:         row.is_weightage           as boolean,
+        totalQuestionsCount: row.total_questions_count  as number | null,
       }
     } catch (error) {
       const msg = (error as Error).message
@@ -254,6 +260,7 @@ export const jdRepository = {
     companyId: number
     jobTitleId?: number
     seniorityId?: number
+    statusId?: number
     page: number
     pageSize: number
     sortBy: string
@@ -275,13 +282,14 @@ export const jdRepository = {
 
     try {
       const result = await pool.query(
-        `SELECT * FROM mechsoft.fn_get_all_jds($1, $2, $3)
+        `SELECT * FROM mechsoft.fn_get_all_jds($1, $2, $3, $4)
          ORDER BY ${sortCol} ${sortDir}
-         LIMIT $4 OFFSET $5`,
+         LIMIT $5 OFFSET $6`,
         [
           params.companyId,
           params.jobTitleId ?? null,
           params.seniorityId ?? null,
+          params.statusId ?? null,
           params.pageSize,
           offset,
         ]
@@ -295,11 +303,28 @@ export const jdRepository = {
     }
   },
 
+  async publishJd(params: { jdId: number; userId: number }): Promise<boolean> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_publish_jd($1, $2) AS published',
+        [params.jdId, params.userId]
+      )
+      return result.rows[0]?.published as boolean
+    } catch (error) {
+      const msg = (error as Error).message
+      logger.error('DB error in publishJd', { message: msg, error })
+      throw new AppError(`Database error: ${msg}`, 500)
+    }
+  },
+
   async getJdCounts(companyId: number): Promise<{
     totalJds: number
     addedThisWeek: number
     remoteRoles: number
     hybridRoles: number
+    draftCount: number
+    inprogressCount: number
+    completedCount: number
   }> {
     try {
       const result = await pool.query(
@@ -308,10 +333,13 @@ export const jdRepository = {
       )
       const row = result.rows[0]
       return {
-        totalJds:       Number(row.total_jds),
-        addedThisWeek:  Number(row.added_this_week),
-        remoteRoles:    Number(row.remote_roles),
-        hybridRoles:    Number(row.hybrid_roles),
+        totalJds:        Number(row.total_jds),
+        addedThisWeek:   Number(row.added_this_week),
+        remoteRoles:     Number(row.remote_roles),
+        hybridRoles:     Number(row.hybrid_roles),
+        draftCount:      Number(row.draft_count),
+        inprogressCount: Number(row.inprogress_count),
+        completedCount:  Number(row.completed_count),
       }
     } catch (error) {
       logger.error('DB error in getJdCounts', { error })

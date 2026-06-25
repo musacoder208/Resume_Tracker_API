@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { validate, validateQuery, validateParams } from '@shared/validators/validate'
-import { answerJdSchema, getAllJdsSchema, jdByIdSchema, generateWeightageSchema, updateWeightageSchema, updateTheorySchema, editQaSchema, updateQaSchema } from './schemas/jd.schema'
+import { answerJdSchema, getAllJdsSchema, jdByIdSchema, generateWeightageSchema, updateWeightageSchema, updateTheorySchema, editQaSchema, updateQaSchema, publishJdSchema } from './schemas/jd.schema'
 import { jdController } from './jd.controller'
 
 const router = Router()
@@ -18,5 +18,6 @@ router.delete('/deleteJd/:jd_id', validateParams(jdByIdSchema), jdController.del
 router.post('/update_theory', validate(updateTheorySchema), jdController.updateTheory)
 router.post('/edit_qa', validate(editQaSchema), jdController.editQa)
 router.post('/update_qa', validate(updateQaSchema), jdController.updateQa)
+router.put('/publishJd', validate(publishJdSchema), jdController.publishJd)
 
 export default router

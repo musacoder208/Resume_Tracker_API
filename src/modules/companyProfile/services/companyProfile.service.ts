@@ -10,11 +10,14 @@ export const companyProfileService = {
   async startProfile(
     userId: number,
     tenantId: number
-  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob; theory: string | null }> {
-    const { exists, data, theory } = await companyProfileRepository.checkProfileExists(tenantId)
+  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob; theory: string | null; totalQuestionsCount: number | null }> {
+    const { exists, data, theory, total_questions_count } = await companyProfileRepository.checkProfileExists(tenantId)
     const response = await aiClient.startSession(tenantId, userId, exists ? data : undefined)
     logger.info('Profile Q&A session started', { tenantId, resumed: exists })
-    return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data, theory: theory ?? null }
+    const totalQuestionsCount = exists
+      ? (total_questions_count ?? null)
+      : (response.total_questions_count ?? null)
+    return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data, theory: theory ?? null, totalQuestionsCount }
   },
 
   // ─── POST /answer ─────────────────────────────────────────────────────────────
@@ -25,6 +28,7 @@ export const companyProfileService = {
     sessionId: string
     nextQuestion: QANextQuestion
     data: QADataBlob
+    totalQuestionsCount: number | null
   }): Promise<{
     isCompleted: boolean
     nextQuestion?: QANextQuestion
@@ -87,7 +91,8 @@ export const companyProfileService = {
         params.nextQuestion.field_key,
         params.nextQuestion.text,
         [params.answer],
-        params.nextQuestion.mode
+        params.nextQuestion.mode,
+        params.totalQuestionsCount
       )
 
       logger.info('Profile Q&A completed and theory saved', { tenantId: params.tenantId })
@@ -108,7 +113,8 @@ export const companyProfileService = {
       params.nextQuestion.field_key,
       params.nextQuestion.text,
       [params.answer],
-      params.nextQuestion.mode
+      params.nextQuestion.mode,
+      params.totalQuestionsCount
     )
 
     return {
@@ -130,7 +136,9 @@ export const companyProfileService = {
 
   // ─── GET /details ─────────────────────────────────────────────────────────────
   async getProfileDetails(tenantId: number) {
-    return companyProfileRepository.getProfileDetails(tenantId)
+    const result = await companyProfileRepository.getProfileDetails(tenantId)
+    if (!result) return null
+    return { theory: (result.theory as string) ?? null }
   },
 
   // ─── GET /registration ────────────────────────────────────────────────────────
@@ -230,10 +238,20 @@ export const companyProfileService = {
     const savedCtx = session.context_data as Record<string, unknown>
     const primaryFieldKey = updatedFields[0]
     const interactions = (savedCtx.interactions as Array<Record<string, unknown>>) ?? []
+
+    const hasClarification = (fk: string) =>
+      interactions.some((i) => i.field_key === fk && i.mode === 'clarification')
+
     const updatedInteractions = interactions.map((item) => {
       const fk = item.field_key as string
-      if (fk === primaryFieldKey) return { ...item, raw_answer: newValue }
-      if (impactedUpdates[fk] !== undefined) return { ...item, raw_answer: impactedUpdates[fk] }
+      if (fk === primaryFieldKey) {
+        if (hasClarification(fk)) return item.mode === 'clarification' ? { ...item, raw_answer: newValue } : item
+        return { ...item, raw_answer: newValue }
+      }
+      if (impactedUpdates[fk] !== undefined) {
+        if (hasClarification(fk)) return item.mode === 'clarification' ? { ...item, raw_answer: impactedUpdates[fk] } : item
+        return { ...item, raw_answer: impactedUpdates[fk] }
+      }
       return item
     })
 
@@ -246,6 +264,14 @@ export const companyProfileService = {
       },
     }
 
+    const simplifiedSnapshot = Object.fromEntries(
+      Object.entries(updatedSnapshot).map(([key, field]) => {
+        const f = field as Record<string, unknown>
+        return [key, f.raw_answer ?? f.value ?? null]
+      })
+    )
+    const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot)
+
     await companyProfileRepository.addUpdateCompanyProfile(
       tenantId,
       session.field_key,
@@ -256,11 +282,11 @@ export const companyProfileService = {
       false,
       userId,
       userId,
-      null
+      finalizeResponse.rendered_text
     )
 
-    logger.info('Answer updated', { tenantId, updatedFields })
-    return { completed: true, cancelled: false, updated_fields: updatedFields }
+    logger.info('Answer updated and theory regenerated', { tenantId, updatedFields })
+    return { completed: true, cancelled: false, updated_fields: updatedFields, theory: finalizeResponse.rendered_text ?? null }
   },
 
   // ─── DELETE ───────────────────────────────────────────────────────────────────

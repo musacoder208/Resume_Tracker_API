@@ -57,4 +57,5 @@ export interface QAResponse {
   session_id: string
   next_question: QANextQuestion | null
   data: QADataBlob
+  total_questions_count?: number | null
 }

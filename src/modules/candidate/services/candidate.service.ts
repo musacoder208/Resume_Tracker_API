@@ -151,6 +151,91 @@ export const candidateService = {
     return { status: 'extracted', ...result }
   },
 
+  async uploadResumesStream(
+    files: Express.Multer.File[],
+    positionTitle: string,
+    jdId: number,
+    createdBy: number,
+    push: (data: Record<string, unknown>) => void
+  ): Promise<void> {
+    const { valid, incomplete } = validateFiles(files)
+
+    for (const inc of incomplete) {
+      push({ filename: inc.filename, status: 'incomplete', reason: inc.reason, isSelected: false })
+    }
+
+    if (!valid.length) return
+
+    const filePathMap = new Map(valid.map((v) => [v.file.originalname, v.file.path]))
+    const batchSeen = new Map<string, boolean>()
+
+    await resumeExtractClient.extractResumes(valid.map((v) => v.file), positionTitle, async (item) => {
+      item.resume_file_path = filePathMap.get(item.filename) ?? null
+
+      if (item.status === 'incomplete' || item.status === 'failed') {
+        push({ ...item, reason: 'Incomplete resume data', isSelected: false })
+        return
+      }
+
+      if (item.status === 'success' && item.position_relevance?.match === false) {
+        push({ ...item, reason: item.position_relevance.reason, isSelected: false })
+        return
+      }
+
+      const pi = item.personal_info as Record<string, { value: string | null }> | undefined
+      const fullName = pi?.full_name?.value ?? ''
+      const email    = pi?.email?.value ?? ''
+      const phone    = pi?.phone?.value ?? ''
+      const batchKey = `${fullName.toLowerCase()}|${email.toLowerCase()}|${phone}`
+
+      if (batchSeen.has(batchKey)) {
+        push({ ...item, reason: 'Duplicate within uploaded batch', isSelected: false })
+        return
+      }
+      batchSeen.set(batchKey, true)
+
+      const exists = await candidateRepository.checkDuplicate(fullName, email, phone)
+      if (exists) {
+        push({ ...item, reason: 'Already exists in system', isSelected: false })
+        return
+      }
+
+      const pro          = (item.professional_info ?? {}) as Record<string, unknown>
+      const education    = ((pro.education as { value: object[] } | undefined)?.value ?? [])
+      const experience   = ((pro.Experience as { value: object[] } | undefined)?.value ?? [])
+      const techSkills   = ((pro.technical_stack_and_tools as { value: string[] } | undefined)?.value ?? [])
+      const coreSkills   = ((pro.core_skills as { value: string[] } | undefined)?.value ?? [])
+      const softSkills   = ((pro.soft_skills as { value: string[] } | undefined)?.value ?? [])
+
+      const candidateId = await candidateRepository.saveCandidateDetails({
+        jdId,
+        fullName,
+        email,
+        phone,
+        location:         (pi?.location?.value as string | null) ?? null,
+        linkedinUrl:      (pi?.linkedin_url?.value as string | null) ?? null,
+        githubUrl:        (pi?.github_url?.value as string | null) ?? null,
+        portfolioLinks:   (pi?.portfolio_links?.value as string[] | null) ?? null,
+        currentJobTitle:  ((pro.job_title as { value: string } | undefined)?.value) ?? null,
+        currentCompany:   ((pro.current_company as { value: string } | undefined)?.value) ?? null,
+        totalExperience:  ((pro.total_years_experience as { value: number } | undefined)?.value) ?? null,
+        resumeFileName:   (item.filename as string) ?? null,
+        resumeFilePath:   (item.resume_file_path as string | null) ?? null,
+        rawAiResponse:    item,
+        education,
+        experience,
+        technicalSkills:  techSkills,
+        coreSkills,
+        softSkills,
+        createdBy,
+      })
+
+      push({ ...item, candidate_id: candidateId, isSelected: true })
+    })
+
+    cleanupFiles(valid.map((v) => v.file))
+  },
+
   async selectCandidateFiles(
     files: Express.Multer.File[],
     positionTitle: string

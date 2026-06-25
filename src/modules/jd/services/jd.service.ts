@@ -110,7 +110,7 @@ export const jdService = {
     userId: number,
     jdId?: number,
     jdDetails?: any
-  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob }> {
+  ): Promise<{ sessionId: string; nextQuestion: QANextQuestion; data: QADataBlob; totalQuestionsCount: number | null }> {
     let requestBody: import('@shared/types/qa.types').QAStartRequest
 
     if (jdId) {
@@ -140,7 +140,12 @@ export const jdService = {
     const response = await pythonClient.startJd(requestBody)
 
     //logger.info('JD session started', { companyId, sessionId: response.session_id, userId, resume: !!resume })
-    return { sessionId: response.session_id, nextQuestion: response.next_question!, data: response.data }
+    return {
+      sessionId: response.session_id,
+      nextQuestion: response.next_question!,
+      data: response.data,
+      totalQuestionsCount: response.total_questions_count ?? null,
+    }
   },
 
   async submitJdAnswer(params: {
@@ -153,6 +158,7 @@ export const jdService = {
     nextQuestion: QANextQuestion
     data: QADataBlob
     jdId: number | null
+    totalQuestionsCount: number | null
   }): Promise<{
     jdId: number
     isFinalized: boolean
@@ -187,6 +193,7 @@ export const jdService = {
       userId: params.userId,
       mode: params.nextQuestion.mode,
       workModel: params.nextQuestion.field_key === 'work_model' ? params.answer : null,
+      totalQuestionsCount: params.totalQuestionsCount,
     })
 
     if (!answerResponse.completed) {
@@ -343,6 +350,7 @@ export const jdService = {
     companyId: number
     jobTitleId?: number
     seniorityId?: number
+    statusId?: number
     page: number
     pageSize: number
     sortBy: string
@@ -497,5 +505,15 @@ export const jdService = {
       step: respondResponse.step,
       respondPayload: respondResponse,
     }
+  },
+
+  async publishJd(params: { jdId: number; userId: number }): Promise<{ published: boolean; message: string }> {
+    const published = await jdRepository.publishJd(params)
+    if (!published) {
+      logger.warn('JD publish — no row updated', { jdId: params.jdId })
+      return { published: false, message: 'JD not found or already deleted.' }
+    }
+    logger.info('JD published', { jdId: params.jdId })
+    return { published: true, message: 'JD published successfully.' }
   },
 }

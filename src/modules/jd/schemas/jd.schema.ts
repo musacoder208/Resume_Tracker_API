@@ -19,6 +19,7 @@ const ALLOWED_SORT_BY = ['job_title', 'seniority', 'min_exp', 'max_exp', 'status
 export const getAllJdsSchema = z.object({
   job_title_id: optionalPositiveInt('job_title_id'),
   seniority_id: optionalPositiveInt('seniority_id'),
+  status_id:    optionalPositiveInt('status_id'),
   page: z.preprocess(
     (val) => (val !== undefined && val !== '' ? Number(val) : 1),
     z.number().int().positive('page must be a positive integer').default(1)
@@ -75,6 +76,10 @@ export const updateQaSchema = z.object({
   answer: z.string().min(1, 'answer is required'),
 })
 
+export const publishJdSchema = z.object({
+  jd_id: z.number().int().positive('jd_id must be a positive integer'),
+})
+
 export type AnswerJdDto = z.infer<typeof answerJdSchema>
 export type GetAllJdsDto = z.infer<typeof getAllJdsSchema>
 export type JdByIdDto = z.infer<typeof jdByIdSchema>
@@ -83,3 +88,4 @@ export type UpdateWeightageDto = z.infer<typeof updateWeightageSchema>
 export type UpdateTheoryDto = z.infer<typeof updateTheorySchema>
 export type EditQaDto = z.infer<typeof editQaSchema>
 export type UpdateQaDto = z.infer<typeof updateQaSchema>
+export type PublishJdDto = z.infer<typeof publishJdSchema>

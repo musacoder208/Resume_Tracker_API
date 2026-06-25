@@ -9,11 +9,13 @@ import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
 let tempSessionId: string | null = null
 let tempNextQuestion: QANextQuestion | null = null
 let tempData: QADataBlob | null = null
+let tempTotalQuestionsCount: number | null = null
 
 function clearTempState(): void {
   tempSessionId = null
   tempNextQuestion = null
   tempData = null
+  tempTotalQuestionsCount = null
 }
 
 // Edit QA session state — one active edit session at a time
@@ -31,11 +33,12 @@ export const companyProfileController = {
       const { userId, tenantId } = req
       if (!userId || !tenantId) throw new AppError('Unauthorized', 401)
 
-      const { sessionId, nextQuestion, data, theory } = await companyProfileService.startProfile(userId, tenantId)
+      const { sessionId, nextQuestion, data, theory, totalQuestionsCount } = await companyProfileService.startProfile(userId, tenantId)
 
       tempSessionId = sessionId
       tempNextQuestion = nextQuestion
       tempData = data
+      tempTotalQuestionsCount = totalQuestionsCount
 
       sendSuccess(res, {
         code: 'PROFILE_SESSION_STARTED',
@@ -44,6 +47,7 @@ export const companyProfileController = {
           session_id: tempSessionId,
           next_question: tempNextQuestion,
           theory: theory ?? null,
+          total_questions_count: tempTotalQuestionsCount,
           data_blob: data,
         },
         requestId: req.traceId,
@@ -69,6 +73,7 @@ export const companyProfileController = {
         sessionId: tempSessionId,
         nextQuestion: tempNextQuestion,
         data: tempData,
+        totalQuestionsCount: tempTotalQuestionsCount,
       })
 
       if (result.isCompleted) {
@@ -79,6 +84,7 @@ export const companyProfileController = {
           data: {
             next_question: null,
             theory: result.theory ?? null,
+            total_questions_count: tempTotalQuestionsCount,
           },
           requestId: req.traceId,
         })
@@ -94,6 +100,7 @@ export const companyProfileController = {
         data: {
           next_question: tempNextQuestion,
           theory: result.theory ?? null,
+          total_questions_count: tempTotalQuestionsCount,
           data_blob: result.data,
         },
         requestId: req.traceId,

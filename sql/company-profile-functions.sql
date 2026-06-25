@@ -204,12 +204,13 @@ RETURNS JSON
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_context_data JSONB;
-    v_theory       TEXT;
-    v_result       JSON;
+    v_context_data          JSONB;
+    v_theory                TEXT;
+    v_total_questions_count INT;
+    v_result                JSON;
 BEGIN
-    SELECT s.context_data, s.theory
-    INTO   v_context_data, v_theory
+    SELECT s.context_data, s.theory, h.total_questions_count
+    INTO   v_context_data, v_theory, v_total_questions_count
     FROM   mechsoft.tbl_profile_ai_chat_session s
     JOIN   mechsoft.company_profile_header      h ON h.company_id = s.company_id
     WHERE  s.company_id  = p_company_id
@@ -220,9 +221,9 @@ BEGIN
     LIMIT  1;
 
     IF v_context_data IS NOT NULL THEN
-        v_result := JSON_BUILD_OBJECT('exists', TRUE, 'data', v_context_data, 'theory', v_theory);
+        v_result := JSON_BUILD_OBJECT('exists', TRUE, 'data', v_context_data, 'theory', v_theory, 'total_questions_count', v_total_questions_count);
     ELSE
-        v_result := JSON_BUILD_OBJECT('exists', FALSE, 'data', '{}'::JSONB, 'theory', NULL);
+        v_result := JSON_BUILD_OBJECT('exists', FALSE, 'data', '{}'::JSONB, 'theory', NULL, 'total_questions_count', NULL);
     END IF;
 
     RETURN v_result;
@@ -582,10 +583,11 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_add_update_company_profile(
     p_created_by     INT,
     p_modified_by    INT,
     p_theory         JSONB DEFAULT NULL,
-    p_qa_field_key   VARCHAR DEFAULT NULL,  -- current question field_key (may differ from session p_field_key)
-    p_question_text  VARCHAR DEFAULT NULL,
-    p_answer_value   TEXT[]  DEFAULT NULL,
-    p_mode           VARCHAR DEFAULT NULL
+    p_qa_field_key          VARCHAR DEFAULT NULL,  -- current question field_key (may differ from session p_field_key)
+    p_question_text         VARCHAR DEFAULT NULL,
+    p_answer_value          TEXT[]  DEFAULT NULL,
+    p_mode                  VARCHAR DEFAULT NULL,
+    p_total_questions_count INT     DEFAULT NULL
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -611,7 +613,7 @@ BEGIN
       AND  s.is_deleted  = FALSE
     LIMIT  1;
 
-    -- ── 2. Insert header once (skip if already exists) ────────────────────────
+    -- ── 2. Insert header once (skip if already exists); update total_questions_count ──
     SELECT "ProfileHeaderId" INTO v_header_id
     FROM   mechsoft.company_profile_header
     WHERE  company_id = p_company_id
@@ -619,13 +621,20 @@ BEGIN
 
     IF v_header_id IS NULL THEN
         INSERT INTO mechsoft.company_profile_header (
-            company_id, status_id, is_completed, is_deleted,
+            company_id, status_id, is_completed, total_questions_count, is_deleted,
             created_by, created_date, modified_by, modified_date
         )
         VALUES (
-            p_company_id, v_status_id, FALSE, FALSE,
+            p_company_id, v_status_id, FALSE, p_total_questions_count, FALSE,
             p_created_by, NOW(), NULL, NULL
         );
+    ELSIF p_total_questions_count IS NOT NULL THEN
+        UPDATE mechsoft.company_profile_header
+        SET    total_questions_count = p_total_questions_count,
+               modified_by          = p_modified_by,
+               modified_date        = NOW()
+        WHERE  company_id = p_company_id
+          AND  is_deleted = FALSE;
     END IF;
 
     -- ── 3. Always upsert QA from snapshot (every answer) ─────────────────────
@@ -764,13 +773,25 @@ BEGIN
             v_change_field := v_change->>'field_key';
             v_change_after := ARRAY[v_change->'after'->>'value'];
 
+            -- Prefer clarification row (latest answer); fall back to initial
             SELECT id INTO v_qa_id
             FROM   mechsoft.tbl_profile_qa
             WHERE  company_id = p_company_id
               AND  field_key  = v_change_field
-              AND  COALESCE(mode, 'initial') NOT IN ('clarification', 'crossfield')
+              AND  mode       = 'clarification'
               AND  is_deleted = FALSE
+            ORDER BY id DESC
             LIMIT  1;
+
+            IF v_qa_id IS NULL THEN
+                SELECT id INTO v_qa_id
+                FROM   mechsoft.tbl_profile_qa
+                WHERE  company_id = p_company_id
+                  AND  field_key  = v_change_field
+                  AND  COALESCE(mode, 'initial') NOT IN ('clarification', 'crossfield')
+                  AND  is_deleted = FALSE
+                LIMIT  1;
+            END IF;
 
             IF v_qa_id IS NULL THEN
                 RAISE EXCEPTION 'QA record not found for field_key: %', v_change_field;

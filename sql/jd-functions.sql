@@ -101,8 +101,9 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_add_update_jd(
   p_qa_history   JSONB,
   p_jd_theory    TEXT,
   p_user_id      INT,
-  p_mode         VARCHAR DEFAULT NULL,
-  p_work_model   TEXT    DEFAULT NULL
+  p_mode                  VARCHAR DEFAULT NULL,
+  p_work_model            TEXT    DEFAULT NULL,
+  p_total_questions_count INT     DEFAULT NULL
 )
 RETURNS INT
 LANGUAGE plpgsql
@@ -119,7 +120,7 @@ BEGIN
     FROM public.mst_status st
     INNER JOIN public.mst_modules md ON md.module_id = st.module_id
     WHERE md.module_code = 'JD_MODULE'
-      AND st.status_name = 'In_Progress'
+      AND st.status_code = 'draft'
     LIMIT 1;
 
     INSERT INTO mechsoft.tbl_jd_header (
@@ -134,6 +135,7 @@ BEGIN
       end_date,
       session_id,
       work_model,
+      total_questions_count,
       is_deleted,
       created_by,
       created_date,
@@ -151,6 +153,7 @@ BEGIN
       NULL,
       p_session_id,
       p_work_model,
+      p_total_questions_count,
       FALSE,
       p_user_id,
       NOW(),
@@ -372,10 +375,11 @@ BEGIN
   WHERE jd_id      = p_jd_id
     AND is_deleted = FALSE;
 
-  SELECT id INTO v_status_id
-  FROM mechsoft.mst_status
-  WHERE module      = 'JD'
-    AND status_code = 'COMPLETED'
+  SELECT st.status_id INTO v_status_id
+  FROM public.mst_status st
+  INNER JOIN public.mst_modules md ON md.module_id = st.module_id
+  WHERE md.module_code = 'JD_MODULE'
+    AND st.status_code = 'weight_pending'
   LIMIT 1;
 
   UPDATE mechsoft.tbl_jd_header
@@ -383,12 +387,11 @@ BEGIN
     status_id     = v_status_id,
     modified_by   = p_user_id,
     modified_date = NOW()
-  WHERE id         = p_jd_id
+  WHERE jd_id      = p_jd_id
     AND is_deleted = FALSE;
 
 END;
 $$;
-
 -- ------------------------------------------------------------
 -- fn_get_all_jds
 -- Returns filtered JDs for a company with total_count.
@@ -397,7 +400,8 @@ $$;
 CREATE OR REPLACE FUNCTION mechsoft.fn_get_all_jds(
   p_company_id   INT,
   p_job_title_id INT DEFAULT NULL,
-  p_seniority_id INT DEFAULT NULL
+  p_seniority_id INT DEFAULT NULL,
+  p_status_id    INT DEFAULT NULL
 )
 RETURNS TABLE (
   jd_id        INT,
@@ -411,6 +415,8 @@ RETURNS TABLE (
   start_date   TIMESTAMP,
   end_date     TIMESTAMP,
   work_model   VARCHAR,
+  created_by   VARCHAR,
+  created_date TIMESTAMP,
   total_count  BIGINT
 )
 LANGUAGE plpgsql
@@ -429,15 +435,20 @@ BEGIN
     h.start_date,
     h.end_date,
     h.work_model,
+    e.employee_name       AS created_by,
+    h.created_date,
     COUNT(*) OVER()       AS total_count
   FROM  mechsoft.tbl_jd_header  h
   LEFT JOIN public.mst_jobtitle  jt ON jt.id        = h.job_title_id
   LEFT JOIN public.mst_seniority s  ON s.id         = h.seniority_id
   LEFT JOIN public.mst_status    st ON st.status_id = h.status_id
+  LEFT JOIN public.mst_users     u  ON u.user_id         = h.created_by
+  LEFT JOIN public.mst_employees e  ON e.empid      = u.empid
   WHERE h.company_id  = p_company_id
     AND h.is_deleted  = FALSE
     AND (p_job_title_id IS NULL OR h.job_title_id = p_job_title_id)
-    AND (p_seniority_id IS NULL OR h.seniority_id = p_seniority_id);
+    AND (p_seniority_id IS NULL OR h.seniority_id = p_seniority_id)
+    AND (p_status_id    IS NULL OR h.status_id    = p_status_id);
 END;
 $$;
 
@@ -449,27 +460,40 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_get_jd_counts(
   p_company_id INT
 )
 RETURNS TABLE (
-  total_jds       BIGINT,
-  added_this_week BIGINT,
-  remote_roles    BIGINT,
-  hybrid_roles    BIGINT
+  total_jds        BIGINT,
+  added_this_week  BIGINT,
+  remote_roles     BIGINT,
+  hybrid_roles     BIGINT,
+  draft_count      BIGINT,
+  inprogress_count BIGINT,
+  completed_count  BIGINT
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  v_module_id INT;
 BEGIN
+  SELECT module_id INTO v_module_id
+  FROM public.mst_modules
+  WHERE module_code = 'JD_MODULE'
+  LIMIT 1;
+
   RETURN QUERY
   SELECT
-    COUNT(*)                                                          AS total_jds,
+    COUNT(*)                                                           AS total_jds,
     COUNT(*) FILTER (WHERE h.start_date >= DATE_TRUNC('week', NOW())) AS added_this_week,
-    COUNT(*) FILTER (WHERE LOWER(h.work_model) = 'remote')           AS remote_roles,
-    COUNT(*) FILTER (WHERE LOWER(h.work_model) = 'hybrid')           AS hybrid_roles
+    COUNT(*) FILTER (WHERE LOWER(h.work_model) = 'remote')            AS remote_roles,
+    COUNT(*) FILTER (WHERE LOWER(h.work_model) = 'hybrid')            AS hybrid_roles,
+    COUNT(*) FILTER (WHERE LOWER(st.status_name) = 'draft')           AS draft_count,
+    COUNT(*) FILTER (WHERE LOWER(st.status_name) = 'in_progress')     AS inprogress_count,
+    COUNT(*) FILTER (WHERE LOWER(st.status_name) = 'completed')       AS completed_count
   FROM mechsoft.tbl_jd_header h
+  LEFT JOIN public.mst_status st ON st.status_id = h.status_id
+                                 AND st.module_id = v_module_id
   WHERE h.company_id = p_company_id
     AND h.is_deleted = FALSE;
 END;
 $$;
-
-
 -- ------------------------------------------------------------
 -- fn_get_jd_details_by_id
 -- Returns Q&A rows for the given JD plus header-level context.
@@ -483,16 +507,18 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_get_jd_details_by_id(
   p_jd_id INT
 )
 RETURNS TABLE (
-  jd_id          INT,
-  job_title_id   INT,
-  seniority_id   INT,
-  job_title      TEXT,
-  session_id     VARCHAR,
-  status_name    VARCHAR,
-  theory         TEXT,
-  data_blob      JSONB,
-  weightage_json JSONB,
-  is_weightage   BOOLEAN
+  jd_id                 INT,
+  job_title_id          INT,
+  seniority_id          INT,
+  job_title             TEXT,
+  session_id            VARCHAR,
+  status_name           VARCHAR,
+  status_code           VARCHAR,
+  theory                TEXT,
+  data_blob             JSONB,
+  weightage_json        JSONB,
+  is_weightage          BOOLEAN,
+  total_questions_count BIGINT
 )
 LANGUAGE plpgsql
 AS $$
@@ -505,12 +531,15 @@ BEGIN
     CONCAT(s.name, ' ', jt.title)    AS job_title,
     h.session_id,
     st.status_name,
-    CASE WHEN st.status_name = 'Completed' THEN d.jd_theory
-         ELSE NULL
-    END                              AS theory,
+    st.status_code,
+	CASE
+	    WHEN d.jd_theory IS NOT NULL THEN d.jd_theory
+	    ELSE NULL
+	END                             AS theory,
     d.qa_history                     AS data_blob,
     (w.weightage_json -> 'weights')  AS weightage_json,
-    (w.weightage_id IS NOT NULL)     AS is_weightage
+    (w.weightage_id IS NOT NULL)     AS is_weightage,
+    h.total_questions_count
   FROM  mechsoft.tbl_jd_header h
   INNER JOIN public.mst_status st
           ON st.status_id  = h.status_id
@@ -785,6 +814,22 @@ BEGIN
     VALUES (p_jd_id, p_weightage_json)
     RETURNING weightage_id INTO v_weightage_id;
 
+    -- Set JD status to 'ready' on first weightage generation
+    UPDATE mechsoft.tbl_jd_header
+    SET
+      status_id     = (
+        SELECT st.status_id
+        FROM public.mst_status st
+        INNER JOIN public.mst_modules md ON md.module_id = st.module_id
+        WHERE md.module_code = 'JD_MODULE'
+          AND st.status_code = 'ready'
+        LIMIT 1
+      ),
+      modified_by   = p_user_id,
+      modified_date = NOW()
+    WHERE jd_id      = p_jd_id
+      AND is_deleted = FALSE;
+
   ELSE
     -- ── UPDATE flow ──────────────────────────────────────────
 
@@ -1048,5 +1093,42 @@ BEGIN
 
   END LOOP;
 
+END;
+$$;
+
+
+-- ------------------------------------------------------------
+-- fn_publish_jd
+-- Sets JD status to 'publish' and marks is_active = TRUE.
+-- Called when user clicks Save & Publish.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_publish_jd(
+  p_jd_id   INT,
+  p_user_id INT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_status_id INT;
+BEGIN
+
+  SELECT st.status_id INTO v_status_id
+  FROM public.mst_status st
+  INNER JOIN public.mst_modules md ON md.module_id = st.module_id
+  WHERE md.module_code = 'JD_MODULE'
+    AND st.status_code = 'publish'
+  LIMIT 1;
+
+  UPDATE mechsoft.tbl_jd_header
+  SET
+    status_id     = v_status_id,
+    is_active     = TRUE,
+    modified_by   = p_user_id,
+    modified_date = NOW()
+  WHERE jd_id      = p_jd_id
+    AND is_deleted = FALSE;
+
+  RETURN FOUND;
 END;
 $$;
