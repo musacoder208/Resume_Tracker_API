@@ -57,7 +57,10 @@ export const candidateController = {
         res.write(`data: ${JSON.stringify(data)}\n\n`)
       }
 
-      await candidateService.uploadResumesStream(files, positionTitle.trim(), jdId, userId, push)
+      const orgId = req.tenantId
+      if (!orgId) throw new AppError('Unauthorized', 401)
+
+      await candidateService.uploadResumesStream(files, positionTitle.trim(), jdId, orgId, userId, push)
 
       res.write('data: [DONE]\n\n')
       res.end()

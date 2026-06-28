@@ -155,6 +155,7 @@ export const candidateService = {
     files: Express.Multer.File[],
     positionTitle: string,
     jdId: number,
+    orgId: number,
     createdBy: number,
     push: (data: Record<string, unknown>) => void
   ): Promise<void> {
@@ -169,7 +170,10 @@ export const candidateService = {
     const filePathMap = new Map(valid.map((v) => [v.file.originalname, v.file.path]))
     const batchSeen = new Map<string, boolean>()
 
-    await resumeExtractClient.extractResumes(valid.map((v) => v.file), positionTitle, async (item) => {
+    await resumeExtractClient.extractResumes(
+      valid.map((v) => v.file),
+      positionTitle,
+      async (item) => {
       item.resume_file_path = filePathMap.get(item.filename) ?? null
 
       if (item.status === 'incomplete' || item.status === 'failed') {
@@ -228,10 +232,14 @@ export const candidateService = {
         coreSkills,
         softSkills,
         createdBy,
+        uploadStatus:     'success',
+        reason:           null,
       })
 
       push({ ...item, candidate_id: candidateId, isSelected: true })
-    })
+      },
+      { jdId, orgId, createdBy }
+    )
 
     cleanupFiles(valid.map((v) => v.file))
   },
@@ -293,6 +301,8 @@ export const candidateService = {
         coreSkills,
         softSkills,
         createdBy,
+        uploadStatus: 'success',
+        reason: null,
       })
 
       candidateIds.push(candidateId)

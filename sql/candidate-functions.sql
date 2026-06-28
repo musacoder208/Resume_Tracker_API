@@ -3,6 +3,96 @@
 -- Schema: mechsoft
 -- ============================================================
 
+-- ------------------------------------------------------------
+-- DDL: add upload tracking columns to tbl_candidates_header
+-- Run once; safe to re-run (IF NOT EXISTS guard).
+-- ------------------------------------------------------------
+ALTER TABLE mechsoft.tbl_candidates_header
+  ADD COLUMN IF NOT EXISTS upload_status VARCHAR(20)  DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS reason        TEXT         DEFAULT NULL;
+
+
+-- ------------------------------------------------------------
+-- 0. fn_check_candidate_duplicate_by_jd
+--    Validates input, checks for duplicates in DB.
+--    Saves a record for duplicate/incomplete cases.
+--    Returns JSONB with only: { status, reason }
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_check_candidate_duplicate_by_jd(
+  p_jd_id     BIGINT,
+  p_full_name VARCHAR,
+  p_email     VARCHAR,
+  p_phone     VARCHAR,
+  p_job_title VARCHAR,
+  p_created_by BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_status VARCHAR(20);
+  v_reason TEXT;
+BEGIN
+  -- 1. Validate: email AND phone both empty
+  IF (p_email IS NULL OR TRIM(p_email) = '')
+    AND (p_phone IS NULL OR TRIM(p_phone) = '') THEN
+    v_status := 'incomplete';
+    v_reason := 'Email or phone is empty.';
+
+  -- 2. Validate: job_title empty
+  ELSIF p_job_title IS NULL OR TRIM(p_job_title) = '' THEN
+    v_status := 'incomplete';
+    v_reason := 'Job title is missing.';
+
+  -- 3. Check duplicate in DB
+  ELSIF EXISTS (
+    SELECT 1
+    FROM mechsoft.tbl_candidates_header
+    WHERE jd_id        = p_jd_id
+      AND LOWER(email) = LOWER(p_email)
+      AND phone        = p_phone
+      AND is_deleted   = FALSE
+  ) THEN
+    v_status := 'duplicate';
+    v_reason := 'Already exists in DB.';
+
+  ELSE
+    -- 4. Not duplicate, all valid
+    RETURN jsonb_build_object('status', 'success', 'reason', '');
+  END IF;
+
+  -- Save duplicate / incomplete record for tracking
+  INSERT INTO mechsoft.tbl_candidates_header (
+    jd_id,
+    full_name,
+    email,
+    phone,
+    upload_status,
+    reason,
+    is_deleted,
+    created_by,
+    created_date,
+    modified_by,
+    modified_date
+  )
+  VALUES (
+    p_jd_id,
+    p_full_name,
+    p_email,
+    p_phone,
+    v_status,
+    v_reason,
+    FALSE,
+    p_created_by,
+    NOW(),
+    p_created_by,
+    NOW()
+  );
+
+  RETURN jsonb_build_object('status', v_status, 'reason', v_reason);
+END;
+$$;
+
 
 -- ------------------------------------------------------------
 -- 1. fn_check_candidate_duplicate
@@ -89,7 +179,9 @@ CREATE OR REPLACE FUNCTION mechsoft.add_update_candidate_details(
   p_technical_skills   TEXT[],
   p_core_skills        TEXT[],
   p_soft_skills        TEXT[],
-  p_created_by         BIGINT
+  p_created_by         BIGINT,
+  p_upload_status      VARCHAR(20) DEFAULT NULL,
+  p_reason             TEXT        DEFAULT NULL
 )
 RETURNS BIGINT
 LANGUAGE plpgsql
@@ -115,6 +207,8 @@ BEGIN
     resume_file_name,
     resume_file_path,
     raw_ai_response,
+    upload_status,
+    reason,
     is_deleted,
     created_by,
     created_date,
@@ -136,6 +230,8 @@ BEGIN
     p_resume_file_name,
     p_resume_file_path,
     p_raw_ai_response,
+    p_upload_status,
+    p_reason,
     FALSE,
     p_created_by,
     NOW(),

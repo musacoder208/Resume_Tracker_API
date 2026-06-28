@@ -56,16 +56,23 @@ export const resumeExtractClient = {
   async extractResumes(
     files: Express.Multer.File[],
     positionTitle: string,
-    onResult?: (result: ExtractedResumeRaw) => Promise<void>
+    onResult?: (result: ExtractedResumeRaw) => Promise<void>,
+    meta?: { jdId: number; orgId: number; createdBy: number }
   ): Promise<ExtractedResumeRaw[]> {
     try {
       const form = new FormData()
       form.append('position_title', positionTitle)
+      if (meta) {
+        form.append('jd_id',      String(meta.jdId))
+        form.append('org_id',     String(meta.orgId))
+        form.append('user_id', String(meta.createdBy))
+      }
       files.forEach((file) => {
         form.append('files', fs.createReadStream(file.path), {
           filename: file.originalname,
           contentType: file.mimetype,
         })
+        form.append('file_paths', file.path)
       })
 
       const response = await axios.post(

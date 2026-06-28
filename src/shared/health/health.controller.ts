@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { db } from '@shared/config/db';
+import { pool } from '@shared/config/db';
 import { logger } from '@shared/logger/logger';
 import { env } from '@shared/config/env';
 import type { ApiResponse } from '@shared/types/global.types';
@@ -16,7 +16,7 @@ export async function healthCheck(_req: Request, res: Response): Promise<void> {
   let dbStatus: 'connected' | 'disconnected' = 'disconnected';
 
   try {
-    await db.query('SELECT 1');
+    await pool.query('SELECT 1');
     dbStatus = 'connected';
   } catch (err) {
     logger.warn('Health check: database unreachable', {

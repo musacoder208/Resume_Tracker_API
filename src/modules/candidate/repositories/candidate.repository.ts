@@ -39,13 +39,16 @@ export const candidateRepository = {
     coreSkills: string[]
     softSkills: string[]
     createdBy: number
+    uploadStatus?: string | null
+    reason?: string | null
   }): Promise<number> {
     try {
       const result = await pool.query(
         `SELECT mechsoft.add_update_candidate_details(
           $1, $2, $3, $4, $5, $6, $7, $8::text[],
           $9, $10, $11, $12, $13, $14::jsonb,
-          $15::jsonb, $16::jsonb, $17::text[], $18::text[], $19::text[], $20
+          $15::jsonb, $16::jsonb, $17::text[], $18::text[], $19::text[], $20,
+          $21, $22
         ) AS candidate_id`,
         [
           params.jdId,
@@ -68,6 +71,8 @@ export const candidateRepository = {
           params.coreSkills,
           params.softSkills,
           params.createdBy,
+          params.uploadStatus ?? null,
+          params.reason ?? null,
         ]
       )
       return result.rows[0]?.candidate_id as number
