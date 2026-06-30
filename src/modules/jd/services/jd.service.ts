@@ -516,4 +516,10 @@ export const jdService = {
     logger.info('JD published', { jdId: params.jdId })
     return { published: true, message: 'JD published successfully.' }
   },
+
+  async getJDDropdown(): Promise<Array<{ jd_id: number; label: string }>> {
+    const list = await jdRepository.getJDDropdown()
+    logger.info('JD dropdown fetched', { count: list.length })
+    return list
+  },
 }

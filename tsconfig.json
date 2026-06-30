@@ -11,12 +11,12 @@
     "declaration": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "baseUrl": "src",
+    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["shared/*"],
-      "@modules/*": ["modules/*"],
-      "@gateway/*": ["gateway/*"],
-      "@workers/*": ["workers/*"]
+      "@shared/*": ["src/shared/*"],
+      "@modules/*": ["src/modules/*"],
+      "@gateway/*": ["src/gateway/*"],
+      "@workers/*": ["src/workers/*"]
     },
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true

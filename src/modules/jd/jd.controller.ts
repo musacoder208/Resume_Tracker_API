@@ -360,4 +360,22 @@ export const jdController = {
       next(error)
     }
   },
+
+  async getJDDropdown(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const list = await jdService.getJDDropdown()
+
+      sendSuccess(res, {
+        code: 'JD_DROPDOWN_FETCHED',
+        message: 'JD dropdown fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
 }

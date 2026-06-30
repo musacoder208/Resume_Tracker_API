@@ -16,16 +16,27 @@ export const saveCandidateFeedbackSchema = z.object({
   user_feedback:    z.string().min(1, 'user_feedback is required'),
 })
 
+export const saveHRFeedbackSchema = z.object({
+  candidate_id: z.number().int().positive('candidate_id is required'),
+  feedbacks: z.array(z.object({
+    group_score_id:   z.number().int().positive('group_score_id is required'),
+    feedback_type_id: z.number().int().positive('feedback_type_id is required'),
+    user_feedback:    z.string().min(1, 'user_feedback is required'),
+  })).min(1, 'At least one feedback item is required'),
+})
+
 export const getCandidateListSchema = z.object({
   jd_id:             z.coerce.number().int().positive().optional(),
   search_text:       z.string().optional(),
   verdict:           z.string().optional(),
   experience_range:  z.enum(['0-1', '1-3', '3-5', '5-8', '8+']).optional(),
+  status_id:         z.coerce.number().int().positive().optional(),
   page:              z.coerce.number().int().positive().default(1),
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })
 
-export type SaveCandidatesDto       = z.infer<typeof saveCandidatesSchema>
-export type UpdateCandidateScoreDto = z.infer<typeof updateCandidateScoreSchema>
+export type SaveCandidatesDto        = z.infer<typeof saveCandidatesSchema>
+export type UpdateCandidateScoreDto  = z.infer<typeof updateCandidateScoreSchema>
 export type SaveCandidateFeedbackDto = z.infer<typeof saveCandidateFeedbackSchema>
-export type GetCandidateListDto     = z.infer<typeof getCandidateListSchema>
+export type SaveHRFeedbackDto        = z.infer<typeof saveHRFeedbackSchema>
+export type GetCandidateListDto      = z.infer<typeof getCandidateListSchema>

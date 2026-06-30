@@ -19,5 +19,6 @@ router.post('/update_theory', validate(updateTheorySchema), jdController.updateT
 router.post('/edit_qa', validate(editQaSchema), jdController.editQa)
 router.post('/update_qa', validate(updateQaSchema), jdController.updateQa)
 router.put('/publishJd', validate(publishJdSchema), jdController.publishJd)
+router.get('/getJDDropdown', jdController.getJDDropdown)
 
 export default router

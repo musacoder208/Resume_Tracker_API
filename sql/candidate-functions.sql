@@ -30,8 +30,9 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_status VARCHAR(20);
-  v_reason TEXT;
+  v_status    VARCHAR(20);
+  v_reason    TEXT;
+  v_status_id BIGINT;
 BEGIN
   -- 1. Validate: email AND phone both empty
   IF (p_email IS NULL OR TRIM(p_email) = '')
@@ -61,6 +62,14 @@ BEGIN
     RETURN jsonb_build_object('status', 'success', 'reason', '');
   END IF;
 
+  -- Lookup draft status_id for CAND_MGT module
+  SELECT s.status_id INTO v_status_id
+  FROM public.mst_status s
+  INNER JOIN public.mst_modules m ON m.module_id = s.module_id
+  WHERE m.module_code = 'CAND_MGT'
+    AND s.status_code = 'draft'
+  LIMIT 1;
+
   -- Save duplicate / incomplete record for tracking
   INSERT INTO mechsoft.tbl_candidates_header (
     jd_id,
@@ -69,6 +78,7 @@ BEGIN
     phone,
     upload_status,
     reason,
+    status_id,
     is_deleted,
     created_by,
     created_date,
@@ -82,6 +92,7 @@ BEGIN
     p_phone,
     v_status,
     v_reason,
+    v_status_id,
     FALSE,
     p_created_by,
     NOW(),
@@ -123,7 +134,7 @@ $$;
 -- ------------------------------------------------------------
 -- 2. fn_get_jd_dropdown
 --    Returns jd_id + label (seniority + job title) for all
---    active, non-deleted JDs.
+--    non-deleted JDs whose status_code is 'ready'.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION mechsoft.fn_get_jd_dropdown()
 RETURNS TABLE(jd_id BIGINT, label TEXT)
@@ -135,14 +146,16 @@ BEGIN
     h.jd_id,
     CONCAT(s.name, ' ', t.title)::TEXT AS label
   FROM mechsoft.tbl_jd_header h
+  JOIN public.mst_status st
+    ON st.status_id   = h.status_id
+   AND st.status_code = 'ready'
   JOIN public.mst_seniority s
     ON s.id          = h.seniority_id
    AND s.is_deleted  = FALSE
   JOIN public.mst_jobtitle t
     ON t.id          = h.job_title_id
    AND t.is_deleted  = FALSE
-  WHERE h.is_deleted = FALSE
-    AND h.is_active  = TRUE;
+  WHERE h.is_deleted = FALSE;
 END;
 $$;
 
@@ -190,7 +203,16 @@ DECLARE
   v_candidate_id BIGINT;
   v_edu          JSONB;
   v_exp          JSONB;
+  v_status_id    BIGINT;
 BEGIN
+  -- Lookup draft status_id for CAND_MGT module
+  SELECT s.status_id INTO v_status_id
+  FROM public.mst_status s
+  INNER JOIN public.mst_modules m ON m.module_id = s.module_id
+  WHERE m.module_code = 'CAND_MGT'
+    AND s.status_code = 'score_pending'
+  LIMIT 1;
+
   -- 1. Insert candidate header
   INSERT INTO mechsoft.tbl_candidates_header (
     jd_id,
@@ -206,9 +228,10 @@ BEGIN
     total_experience,
     resume_file_name,
     resume_file_path,
-    raw_ai_response,
+    candidate_json,
     upload_status,
     reason,
+    status_id,
     is_deleted,
     created_by,
     created_date,
@@ -232,6 +255,7 @@ BEGIN
     p_raw_ai_response,
     p_upload_status,
     p_reason,
+    v_status_id,
     FALSE,
     p_created_by,
     NOW(),
@@ -321,7 +345,6 @@ BEGIN
   RETURN v_candidate_id;
 END;
 $$;
-
 
 -- ------------------------------------------------------------
 -- 7. fn_get_candidate_details_by_id
@@ -414,28 +437,40 @@ BEGIN
   WHERE candidate_id = p_candidate_id
   LIMIT 1;
 
-  -- 6. Score group breakdown (using score_id from step 5)
+  -- 6. Score group breakdown + HR feedback per group
   IF FOUND THEN
     SELECT COALESCE(
       jsonb_agg(
         jsonb_build_object(
-          'score_id',            score_id,
-          'group_key',           group_key,
-          'group_score',         group_score,
-          'weight',              weight,
-          'penalty_factor',      penalty_factor,
-          'final_contribution',  final_contribution,
-          'missing_required',    missing_required,
-          'present_required',    present_required,
-          'optional_present',    optional_present,
-          'optional_missing',    optional_missing,
-          'llm_classifications', llm_classifications
+          'group_score_id',      sg.group_score_id,
+          'score_id',            sg.score_id,
+          'group_key',           sg.group_key,
+          'group_score',         sg.group_score,
+          'weight',              sg.weight,
+          'penalty_factor',      sg.penalty_factor,
+          'final_contribution',  sg.final_contribution,
+          'missing_required',    sg.missing_required,
+          'present_required',    sg.present_required,
+          'optional_present',    sg.optional_present,
+          'optional_missing',    sg.optional_missing,
+          'llm_classifications', sg.llm_classifications,
+          'hr_feedback', CASE
+            WHEN hf.candidate_id IS NOT NULL THEN jsonb_build_object(
+              'feedback_type_id', hf.feedback_type_id,
+              'user_feedback',    hf.user_feedback
+            )
+            ELSE NULL
+          END
         )
       ), '[]'::JSONB
     )
     INTO v_group_breakdown
-    FROM mechsoft.tbl_candidate_score_group
-    WHERE score_id = v_score.score_id;
+    FROM mechsoft.tbl_candidate_score_group sg
+    LEFT JOIN mechsoft.tbl_candidate_hr_feedbacks hf
+      ON hf.group_score_id = sg.group_score_id
+     AND hf.candidate_id   = p_candidate_id
+     AND hf.is_deleted     = FALSE
+    WHERE sg.score_id = v_score.score_id;
   END IF;
 
   -- 7. Build and return final JSON
@@ -544,6 +579,60 @@ END;
 $$;
 
 
+
+
+-- ------------------------------------------------------------
+-- 10. fn_save_update_hr_feedback
+--     Hard-deletes all existing feedback for the candidate,
+--     then inserts all new records from the JSONB array.
+--     Each array element: { group_score_id, feedback_type_id,
+--                           user_feedback }
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_save_update_hr_feedback(
+  p_candidate_id BIGINT,
+  p_feedbacks    JSONB,
+  p_created_by   INT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_item JSONB;
+BEGIN
+  -- Hard delete all existing feedback for this candidate
+  DELETE FROM mechsoft.tbl_candidate_hr_feedbacks
+  WHERE candidate_id = p_candidate_id;
+
+  -- Insert all new feedback records
+  FOR v_item IN SELECT jsonb_array_elements(p_feedbacks)
+  LOOP
+    INSERT INTO mechsoft.tbl_candidate_hr_feedbacks (
+      candidate_id,
+      group_score_id,
+      feedback_type_id,
+      user_feedback,
+      is_deleted,
+      created_by,
+      created_date,
+      modified_by,
+      modified_date
+    )
+    VALUES (
+      p_candidate_id,
+      (v_item->>'group_score_id')::BIGINT,
+      (v_item->>'feedback_type_id')::BIGINT,
+      v_item->>'user_feedback',
+      FALSE,
+      p_created_by,
+      NOW(),
+      NULL,
+      NULL
+    );
+  END LOOP;
+END;
+$$;
+
+
 -- ============================================================
 -- SCORING FUNCTIONS
 -- ============================================================
@@ -622,7 +711,8 @@ CREATE OR REPLACE FUNCTION mechsoft.fn_get_candidate_list(
   p_verdict          TEXT    DEFAULT NULL,
   p_experience_range TEXT    DEFAULT NULL,
   p_page             BIGINT  DEFAULT 1,
-  p_page_size        BIGINT  DEFAULT 10
+  p_page_size        BIGINT  DEFAULT 10,
+  p_status_id        BIGINT  DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -646,8 +736,10 @@ BEGIN
     WHERE  is_deleted = FALSE
     ORDER  BY candidate_id, created_date DESC
   ) sc ON sc.candidate_id = ch.candidate_id
-  WHERE ch.is_deleted = FALSE
-    AND (p_jd_id IS NULL OR ch.jd_id = p_jd_id)
+  WHERE ch.is_deleted    = FALSE
+    AND ch.upload_status = 'complete'
+    AND (p_jd_id     IS NULL OR ch.jd_id     = p_jd_id)
+    AND (p_status_id IS NULL OR ch.status_id = p_status_id)
     AND (
       p_search_text IS NULL
       OR ch.full_name ILIKE '%' || p_search_text || '%'
@@ -712,8 +804,10 @@ BEGIN
       ORDER  BY candidate_id, created_date DESC
     ) sc ON sc.candidate_id = ch.candidate_id
 
-    WHERE ch.is_deleted = FALSE
-      AND (p_jd_id IS NULL OR ch.jd_id = p_jd_id)
+    WHERE ch.is_deleted    = FALSE
+      AND ch.upload_status = 'complete'
+      AND (p_jd_id     IS NULL OR ch.jd_id     = p_jd_id)
+      AND (p_status_id IS NULL OR ch.status_id = p_status_id)
       AND (
         p_search_text IS NULL
         OR ch.full_name ILIKE '%' || p_search_text || '%'
@@ -799,7 +893,23 @@ DECLARE
   v_score_id          BIGINT;
   v_group_key         TEXT;
   v_group_data        JSONB;
+  v_status_id         BIGINT;
 BEGIN
+  -- Lookup 'ready' status_id for CAND_MGT module
+  SELECT s.status_id INTO v_status_id
+  FROM public.mst_status s
+  INNER JOIN public.mst_modules m ON m.module_id = s.module_id
+  WHERE m.module_code = 'CAND_MGT'
+    AND s.status_code = 'ready'
+  LIMIT 1;
+
+  -- Update candidate header status to 'ready'
+  UPDATE mechsoft.tbl_candidates_header
+  SET    status_id     = v_status_id,
+         modified_by   = p_created_by,
+         modified_date = NOW()
+  WHERE  candidate_id  = p_candidate_id;
+
   -- Check whether a score record already exists for this candidate
   SELECT score_id
   INTO v_existing_score_id
@@ -889,5 +999,55 @@ BEGIN
     --       rows using the same Block 1 logic above.
     NULL;
   END IF;
+END;
+$$;
+
+
+-- ------------------------------------------------------------
+-- 7. fn_get_upload_status_by_jd
+--    Returns candidates grouped by upload_status for a JD.
+--    Used by the upload screen refresh button.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_get_upload_status_by_jd(
+  p_jd_id BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN (
+    SELECT jsonb_build_object(
+      'complete',   COALESCE(jsonb_agg(row) FILTER (WHERE upload_status = 'complete'),   '[]'::JSONB),
+      'duplicate',  COALESCE(jsonb_agg(row) FILTER (WHERE upload_status = 'duplicate'),  '[]'::JSONB),
+      'incomplete', COALESCE(jsonb_agg(row) FILTER (WHERE upload_status = 'incomplete'), '[]'::JSONB)
+    )
+    FROM (
+      SELECT jsonb_build_object(
+        'candidate_id',      ch.candidate_id,
+        'full_name',         ch.full_name,
+        'email',             ch.email,
+        'phone',             ch.phone,
+        'current_job_title', ch.current_job_title,
+        'upload_status',     ch.upload_status,
+        'status_code',       ms.status_code,
+        'reason',            ch.reason,
+        'file_name',         ch.resume_file_name,
+        'file_path',         ch.resume_file_path,
+        'created_date',      ch.created_date,
+        'is_selected',       CASE
+                               WHEN ch.upload_status = 'complete'
+                                AND ms.status_code IN ('draft', 'ready')
+                               THEN TRUE
+                               ELSE FALSE
+                             END
+      ) AS row,
+      ch.upload_status
+      FROM mechsoft.tbl_candidates_header ch
+      LEFT JOIN public.mst_status ms ON ms.status_id = ch.status_id
+      WHERE ch.jd_id      = p_jd_id
+        AND ch.is_deleted = FALSE
+      ORDER BY ch.created_date DESC
+    ) sub
+  );
 END;
 $$;

@@ -3,7 +3,8 @@ import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, GetCandidateListDto } from './schemas/candidate.schema'
+import logger from '@shared/logger/logger'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, GetCandidateListDto } from './schemas/candidate.schema'
 
 export const candidateController = {
   async uploadResumes(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
@@ -45,25 +46,42 @@ export const candidateController = {
       const jdId = parseInt(req.body?.jd_id as string, 10)
       if (isNaN(jdId) || jdId <= 0) throw new AppError('jd_id is required', 400)
 
-      const files = req.files as Express.Multer.File[] | undefined
-      if (!files || files.length === 0) throw new AppError('No files uploaded', 400)
-
-      res.setHeader('Content-Type', 'text/event-stream')
-      res.setHeader('Cache-Control', 'no-cache')
-      res.setHeader('Connection', 'keep-alive')
-      res.flushHeaders()
-
-      const push = (data: Record<string, unknown>) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`)
-      }
-
       const orgId = req.tenantId
       if (!orgId) throw new AppError('Unauthorized', 401)
 
-      await candidateService.uploadResumesStream(files, positionTitle.trim(), jdId, orgId, userId, push)
+      const files = req.files as Express.Multer.File[] | undefined
+      if (!files || files.length === 0) throw new AppError('No files uploaded', 400)
 
-      res.write('data: [DONE]\n\n')
-      res.end()
+      // Fire and forget — Python handles extraction + saving in background
+      candidateService.uploadResumesStream(files, positionTitle.trim(), jdId, orgId, userId)
+        .catch((err) => logger.error('Resume upload stream error', { err }))
+
+      sendSuccess(res, {
+        code: 'UPLOAD_STARTED',
+        message: 'Resumes uploaded. Processing started in background.',
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getUploadStatus(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const jdId = parseInt(req.query?.jd_id as string, 10)
+      if (isNaN(jdId) || jdId <= 0) throw new AppError('jd_id is required', 400)
+
+      const data = await candidateService.getUploadStatus(jdId)
+
+      sendSuccess(res, {
+        code: 'UPLOAD_STATUS_FETCHED',
+        message: 'Upload status fetched successfully',
+        data,
+        requestId: req.traceId,
+      })
     } catch (error) {
       next(error)
     }
@@ -166,6 +184,33 @@ export const candidateController = {
     }
   },
 
+  async saveHRFeedback(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { candidate_id, feedbacks } = req.body as SaveHRFeedbackDto
+
+      await candidateService.saveUpdateHRFeedback({
+        candidateId: candidate_id,
+        feedbacks: feedbacks.map((f) => ({
+          groupScoreId:    f.group_score_id,
+          feedbackTypeId:  f.feedback_type_id,
+          userFeedback:    f.user_feedback,
+        })),
+        createdBy: userId,
+      })
+
+      sendSuccess(res, {
+        code: 'HR_FEEDBACK_SAVED',
+        message: 'HR feedback saved successfully',
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async saveCandidateFeedback(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.userId
@@ -195,13 +240,14 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
-      const { jd_id, search_text, verdict, experience_range, page, page_size } = req.query as unknown as GetCandidateListDto
+      const { jd_id, search_text, verdict, experience_range, status_id, page, page_size } = req.query as unknown as GetCandidateListDto
 
       const { summary, candidates, totalCount, totalPages } = await candidateService.getCandidateList({
         jdId:             jd_id,
         searchText:       search_text,
         verdict:          verdict,
         experienceRange:  experience_range,
+        statusId:         status_id,
         page:             page ?? 1,
         pageSize:         page_size ?? 20,
       })
@@ -219,24 +265,6 @@ export const candidateController = {
             total_pages: totalPages,
           },
         },
-        requestId: req.traceId,
-      })
-    } catch (error) {
-      next(error)
-    }
-  },
-
-  async getJDDropdown(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const userId = req.userId
-      if (!userId) throw new AppError('Unauthorized', 401)
-
-      const list = await candidateService.getJDDropdown()
-
-      sendSuccess(res, {
-        code: 'JD_DROPDOWN_FETCHED',
-        message: 'JD dropdown fetched successfully',
-        data: list,
         requestId: req.traceId,
       })
     } catch (error) {

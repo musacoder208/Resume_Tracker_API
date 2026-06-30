@@ -346,4 +346,14 @@ export const jdRepository = {
       throw new AppError('Database error', 500)
     }
   },
+
+  async getJDDropdown(): Promise<Array<{ jd_id: number; label: string }>> {
+    try {
+      const result = await pool.query('SELECT * FROM mechsoft.fn_get_jd_dropdown()')
+      return result.rows
+    } catch (error) {
+      logger.error('DB error in getJDDropdown', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
 }

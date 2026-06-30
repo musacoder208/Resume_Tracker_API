@@ -88,12 +88,19 @@ export const candidateRepository = {
     }
   },
 
-  async getJDDropdown(): Promise<Array<{ jd_id: number; label: string }>> {
+  async getUploadStatus(jdId: number): Promise<{
+    complete: Record<string, unknown>[]
+    duplicate: Record<string, unknown>[]
+    incomplete: Record<string, unknown>[]
+  }> {
     try {
-      const result = await pool.query('SELECT * FROM mechsoft.fn_get_jd_dropdown()')
-      return result.rows
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_upload_status_by_jd($1) AS data',
+        [jdId]
+      )
+      return result.rows[0]?.data ?? { complete: [], duplicate: [], incomplete: [] }
     } catch (error) {
-      logger.error('DB error in getJDDropdown', { error })
+      logger.error('DB error in getUploadStatus', { error })
       throw new AppError('Database error', 500)
     }
   },
@@ -116,12 +123,13 @@ export const candidateRepository = {
     searchText?: string
     verdict?: string
     experienceRange?: string
+    statusId?: number
     page: number
     pageSize: number
   }): Promise<{ summary: Record<string, unknown>; totalCount: number; candidates: Record<string, unknown>[] }> {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6) AS result',
+        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6, $7) AS result',
         [
           params.jdId            ?? null,
           params.searchText      ?? null,
@@ -129,6 +137,7 @@ export const candidateRepository = {
           params.experienceRange ?? null,
           params.page,
           params.pageSize,
+          params.statusId        ?? null,
         ]
       )
       const raw = result.rows[0]?.result as Record<string, unknown> ?? {}
@@ -177,6 +186,35 @@ export const candidateRepository = {
       return result.rows
     } catch (error) {
       logger.error('DB error in getFeedbackTypes', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async saveUpdateHRFeedback(params: {
+    candidateId: number
+    feedbacks: Array<{ groupScoreId: number; feedbackTypeId: number; userFeedback: string }>
+    createdBy: number
+  }): Promise<void> {
+    try {
+      const feedbacksJson = JSON.stringify(
+        params.feedbacks.map((f) => ({
+          group_score_id:   f.groupScoreId,
+          feedback_type_id: f.feedbackTypeId,
+          user_feedback:    f.userFeedback,
+        }))
+      )
+      await pool.query(
+        'SELECT mechsoft.fn_save_update_hr_feedback($1, $2::jsonb, $3)',
+        [params.candidateId, feedbacksJson, params.createdBy]
+      )
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; hint?: string; code?: string }
+      logger.error('DB error in saveUpdateHRFeedback', {
+        message: e.message,
+        detail: e.detail,
+        hint: e.hint,
+        code: e.code,
+      })
       throw new AppError('Database error', 500)
     }
   },

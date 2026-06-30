@@ -62,9 +62,10 @@ export const resumeExtractClient = {
     try {
       const form = new FormData()
       form.append('position_title', positionTitle)
+      form.append('isForceFully',   'false')
       if (meta) {
-        form.append('jd_id',      String(meta.jdId))
-        form.append('org_id',     String(meta.orgId))
+        form.append('jd_id',   String(meta.jdId))
+        form.append('org_id',  String(meta.orgId))
         form.append('user_id', String(meta.createdBy))
       }
       files.forEach((file) => {
@@ -72,7 +73,8 @@ export const resumeExtractClient = {
           filename: file.originalname,
           contentType: file.mimetype,
         })
-        form.append('file_paths', file.path)
+        form.append('file_paths',    file.path)
+        form.append('candidate_id', '0')
       })
 
       const response = await axios.post(

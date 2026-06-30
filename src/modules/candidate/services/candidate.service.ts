@@ -156,92 +156,67 @@ export const candidateService = {
     positionTitle: string,
     jdId: number,
     orgId: number,
-    createdBy: number,
-    push: (data: Record<string, unknown>) => void
+    createdBy: number
   ): Promise<void> {
-    const { valid, incomplete } = validateFiles(files)
-
-    for (const inc of incomplete) {
-      push({ filename: inc.filename, status: 'incomplete', reason: inc.reason, isSelected: false })
-    }
+    const { valid } = validateFiles(files)
 
     if (!valid.length) return
 
-    const filePathMap = new Map(valid.map((v) => [v.file.originalname, v.file.path]))
-    const batchSeen = new Map<string, boolean>()
-
+    // Python handles extraction + saving directly to DB.
+    // Node.js just forwards files and waits for the stream to complete.
     await resumeExtractClient.extractResumes(
       valid.map((v) => v.file),
       positionTitle,
-      async (item) => {
-      item.resume_file_path = filePathMap.get(item.filename) ?? null
-
-      if (item.status === 'incomplete' || item.status === 'failed') {
-        push({ ...item, reason: 'Incomplete resume data', isSelected: false })
-        return
-      }
-
-      if (item.status === 'success' && item.position_relevance?.match === false) {
-        push({ ...item, reason: item.position_relevance.reason, isSelected: false })
-        return
-      }
-
-      const pi = item.personal_info as Record<string, { value: string | null }> | undefined
-      const fullName = pi?.full_name?.value ?? ''
-      const email    = pi?.email?.value ?? ''
-      const phone    = pi?.phone?.value ?? ''
-      const batchKey = `${fullName.toLowerCase()}|${email.toLowerCase()}|${phone}`
-
-      if (batchSeen.has(batchKey)) {
-        push({ ...item, reason: 'Duplicate within uploaded batch', isSelected: false })
-        return
-      }
-      batchSeen.set(batchKey, true)
-
-      const exists = await candidateRepository.checkDuplicate(fullName, email, phone)
-      if (exists) {
-        push({ ...item, reason: 'Already exists in system', isSelected: false })
-        return
-      }
-
-      const pro          = (item.professional_info ?? {}) as Record<string, unknown>
-      const education    = ((pro.education as { value: object[] } | undefined)?.value ?? [])
-      const experience   = ((pro.Experience as { value: object[] } | undefined)?.value ?? [])
-      const techSkills   = ((pro.technical_stack_and_tools as { value: string[] } | undefined)?.value ?? [])
-      const coreSkills   = ((pro.core_skills as { value: string[] } | undefined)?.value ?? [])
-      const softSkills   = ((pro.soft_skills as { value: string[] } | undefined)?.value ?? [])
-
-      const candidateId = await candidateRepository.saveCandidateDetails({
-        jdId,
-        fullName,
-        email,
-        phone,
-        location:         (pi?.location?.value as string | null) ?? null,
-        linkedinUrl:      (pi?.linkedin_url?.value as string | null) ?? null,
-        githubUrl:        (pi?.github_url?.value as string | null) ?? null,
-        portfolioLinks:   (pi?.portfolio_links?.value as string[] | null) ?? null,
-        currentJobTitle:  ((pro.job_title as { value: string } | undefined)?.value) ?? null,
-        currentCompany:   ((pro.current_company as { value: string } | undefined)?.value) ?? null,
-        totalExperience:  ((pro.total_years_experience as { value: number } | undefined)?.value) ?? null,
-        resumeFileName:   (item.filename as string) ?? null,
-        resumeFilePath:   (item.resume_file_path as string | null) ?? null,
-        rawAiResponse:    item,
-        education,
-        experience,
-        technicalSkills:  techSkills,
-        coreSkills,
-        softSkills,
-        createdBy,
-        uploadStatus:     'success',
-        reason:           null,
-      })
-
-      push({ ...item, candidate_id: candidateId, isSelected: true })
-      },
+      undefined, // no onResult — Python saves directly
       { jdId, orgId, createdBy }
     )
 
+    // ----- COMMENTED OUT: Node.js save logic (Python now handles this) -----
+    // async (item) => {
+    //   item.resume_file_path = filePathMap.get(item.filename) ?? null
+    //   if (item.status === 'incomplete' || item.status === 'failed') {
+    //     push({ ...item, reason: 'Incomplete resume data', isSelected: false }); return
+    //   }
+    //   if (item.status === 'success' && item.position_relevance?.match === false) {
+    //     push({ ...item, reason: item.position_relevance.reason, isSelected: false }); return
+    //   }
+    //   const pi = item.personal_info as Record<string, { value: string | null }> | undefined
+    //   const fullName = pi?.full_name?.value ?? ''
+    //   const email    = pi?.email?.value ?? ''
+    //   const phone    = pi?.phone?.value ?? ''
+    //   const batchKey = `${fullName.toLowerCase()}|${email.toLowerCase()}|${phone}`
+    //   if (batchSeen.has(batchKey)) {
+    //     push({ ...item, reason: 'Duplicate within uploaded batch', isSelected: false }); return
+    //   }
+    //   batchSeen.set(batchKey, true)
+    //   const exists = await candidateRepository.checkDuplicate(fullName, email, phone)
+    //   if (exists) {
+    //     push({ ...item, reason: 'Already exists in system', isSelected: false }); return
+    //   }
+    //   const pro        = (item.professional_info ?? {}) as Record<string, unknown>
+    //   const education  = ((pro.education as { value: object[] } | undefined)?.value ?? [])
+    //   const experience = ((pro.Experience as { value: object[] } | undefined)?.value ?? [])
+    //   const techSkills = ((pro.technical_stack_and_tools as { value: string[] } | undefined)?.value ?? [])
+    //   const coreSkills = ((pro.core_skills as { value: string[] } | undefined)?.value ?? [])
+    //   const softSkills = ((pro.soft_skills as { value: string[] } | undefined)?.value ?? [])
+    //   const candidateId = await candidateRepository.saveCandidateDetails({
+    //     jdId, fullName, email, phone, uploadStatus: 'success', reason: null, createdBy, ...
+    //   })
+    //   push({ ...item, candidate_id: candidateId, isSelected: true })
+    // },
+    // -------------------------------------------------------------------------
+
     cleanupFiles(valid.map((v) => v.file))
+  },
+
+  async getUploadStatus(jdId: number): Promise<{
+    complete: Record<string, unknown>[]
+    duplicate: Record<string, unknown>[]
+    incomplete: Record<string, unknown>[]
+  }> {
+    const data = await candidateRepository.getUploadStatus(jdId)
+    logger.info('Upload status fetched', { jdId, complete: data.complete.length, duplicate: data.duplicate.length, incomplete: data.incomplete.length })
+    return data
   },
 
   async selectCandidateFiles(
@@ -318,6 +293,15 @@ export const candidateService = {
     return list
   },
 
+  async saveUpdateHRFeedback(params: {
+    candidateId: number
+    feedbacks: Array<{ groupScoreId: number; feedbackTypeId: number; userFeedback: string }>
+    createdBy: number
+  }): Promise<void> {
+    await candidateRepository.saveUpdateHRFeedback(params)
+    logger.info('HR feedback saved', { candidateId: params.candidateId, count: params.feedbacks.length })
+  },
+
   async saveCandidateFeedback(params: {
     candidateId: number
     feedbackTypeId: number
@@ -342,6 +326,7 @@ export const candidateService = {
     searchText?: string
     verdict?: string
     experienceRange?: string
+    statusId?: number
     page: number
     pageSize: number
   }): Promise<{
@@ -354,12 +339,6 @@ export const candidateService = {
     const totalPages = Math.ceil(data.totalCount / params.pageSize)
     logger.info('Candidate list fetched', { count: data.candidates.length, totalCount: data.totalCount, ...params })
     return { ...data, totalPages }
-  },
-
-  async getJDDropdown(): Promise<Array<{ jd_id: number; label: string }>> {
-    const list = await candidateRepository.getJDDropdown()
-    logger.info('JD dropdown fetched', { count: list.length })
-    return list
   },
 
   async updateCandidateScore(
