@@ -303,6 +303,24 @@ export const jdRepository = {
     }
   },
 
+  async updateWeightageConstraints(params: {
+    jdId: number
+    constraints: unknown[]
+    userId: number
+  }): Promise<boolean> {
+    try {
+      const result = await pool.query(
+        `SELECT mechsoft.fn_update_jd_weightage_constraints($1, $2::jsonb, $3) AS updated`,
+        [params.jdId, JSON.stringify(params.constraints), params.userId]
+      )
+      return result.rows[0]?.updated as boolean
+    } catch (error) {
+      const msg = (error as Error).message
+      logger.error('DB error in updateWeightageConstraints', { message: msg, error })
+      throw new AppError(`Database error: ${msg}`, 500)
+    }
+  },
+
   async publishJd(params: { jdId: number; userId: number }): Promise<boolean> {
     try {
       const result = await pool.query(

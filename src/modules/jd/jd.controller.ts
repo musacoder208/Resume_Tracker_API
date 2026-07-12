@@ -6,30 +6,32 @@ import { GetAllJdsDto } from './schemas/jd.schema'
 import { jdService } from './services/jd.service'
 import type { QANextQuestion, QADataBlob } from '@shared/types/qa.types'
 
-// Module-level session state — one active JD creation session at a time
-let tempSessionId: string | null = null
-let tempJdId: number | null = null
-let tempNextQuestion: QANextQuestion | null = null
-let tempData: QADataBlob | null = null
-let tempTotalQuestionsCount: number | null = null
-
-function clearTempState(): void {
-  tempSessionId = null
-  tempJdId = null
-  tempNextQuestion = null
-  tempData = null
-  tempTotalQuestionsCount = null
+// Per-user JD creation session state — keyed by userId
+interface JdSessionState {
+  sessionId: string
+  jdId: number | null
+  nextQuestion: QANextQuestion
+  data: QADataBlob
+  totalQuestionsCount: number | null
 }
 
-// Edit QA session state — one active QA edit session at a time
-let tempEditJdId: number | null = null
-let tempEditUpdateContext: Record<string, unknown> | null = null
-let tempEditStep: string | null = null
+const jdSessionStore = new Map<number, JdSessionState>()
 
-function clearEditTempState(): void {
-  tempEditJdId = null
-  tempEditUpdateContext = null
-  tempEditStep = null
+function clearJdSession(userId: number): void {
+  jdSessionStore.delete(userId)
+}
+
+// Per-user QA edit session state — keyed by userId
+interface JdEditSessionState {
+  jdId: number
+  updateContext: Record<string, unknown>
+  step: string
+}
+
+const jdEditSessionStore = new Map<number, JdEditSessionState>()
+
+function clearJdEditSession(userId: number): void {
+  jdEditSessionStore.delete(userId)
 }
 
 export const jdController = {
@@ -37,30 +39,32 @@ export const jdController = {
     try {
       const companyId = req.tenantId!
       const userId = req.userId!
-      const  jdId  = req.body.jdId
-      const dataBlob  = req.body.dataBlob
+      const jdId = req.body.jdId
+      const dataBlob = req.body.dataBlob
 
       const { sessionId, nextQuestion, data, totalQuestionsCount } = await jdService.startJdSession(
         companyId,
         userId,
-        jdId ? jdId  : undefined,
+        jdId ? jdId : undefined,
         dataBlob
       )
 
-      tempSessionId = sessionId
-      tempJdId = jdId ?? null
-      tempNextQuestion = nextQuestion
-      tempData = data
-      tempTotalQuestionsCount = totalQuestionsCount ?? null
+      jdSessionStore.set(userId, {
+        sessionId,
+        jdId: jdId ?? null,
+        nextQuestion,
+        data,
+        totalQuestionsCount: totalQuestionsCount ?? null,
+      })
 
       sendSuccess(res, {
         code: 'JD_SESSION_STARTED',
         message: 'JD session started',
         data: {
-          session_id: tempSessionId,
-          next_question: tempNextQuestion,
+          session_id: sessionId,
+          next_question: nextQuestion,
           data_blob: data,
-          total_questions_count: tempTotalQuestionsCount,
+          total_questions_count: totalQuestionsCount,
         },
         requestId: req.traceId,
       })
@@ -71,13 +75,15 @@ export const jdController = {
 
   async questionsAnswer(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      if (!tempSessionId || !tempNextQuestion || !tempData) {
+      const userId = req.userId!
+      const session = jdSessionStore.get(userId)
+
+      if (!session) {
         throw new AppError('No active JD session. Call POST /api/jd/start_id first.', 400)
       }
 
       const { answer, job_title_id, seniority_id } = req.body
       const companyId = req.tenantId!
-      const userId = req.userId!
 
       const result = await jdService.submitJdAnswer({
         answer,
@@ -85,18 +91,16 @@ export const jdController = {
         seniorityId: seniority_id,
         companyId,
         userId,
-        sessionId: tempSessionId,
-        nextQuestion: tempNextQuestion,
-        data: tempData,
-        jdId: tempJdId,
-        totalQuestionsCount: tempTotalQuestionsCount,
+        sessionId: session.sessionId,
+        nextQuestion: session.nextQuestion,
+        data: session.data,
+        jdId: session.jdId,
+        totalQuestionsCount: session.totalQuestionsCount,
       })
-
-      tempJdId = result.jdId
 
       if (result.isFinalized) {
         const finalizedJdId = result.jdId
-        clearTempState()
+        clearJdSession(userId)
 
         sendSuccess(res, {
           code: 'JD_COMPLETED',
@@ -107,15 +111,20 @@ export const jdController = {
         return
       }
 
-      tempNextQuestion = result.nextQuestion!
-      tempData = result.data!
+      // Update this user's session with the latest state
+      jdSessionStore.set(userId, {
+        ...session,
+        jdId: result.jdId,
+        nextQuestion: result.nextQuestion!,
+        data: result.data!,
+      })
 
       sendSuccess(res, {
         code: 'ANSWER_SUBMITTED',
         message: 'Answer submitted',
         data: {
-          jd_id: tempJdId,
-          next_question: tempNextQuestion,
+          jd_id: result.jdId,
+          next_question: result.nextQuestion,
           data_blob: result.data,
         },
         requestId: req.traceId,
@@ -290,14 +299,37 @@ export const jdController = {
         userId,
       })
 
-      tempEditJdId = jd_id
-      tempEditUpdateContext = result.updateContext
-      tempEditStep = result.step
+      jdEditSessionStore.set(userId, {
+        jdId: jd_id,
+        updateContext: result.updateContext,
+        step: result.step,
+      })
 
       res.status(200).json({
         success: true,
         message: 'Edit QA session started',
         data: result.respondPayload,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async updateWeightageConstraints(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id, constraints } = req.body
+      const userId = req.userId!
+
+      const result = await jdService.updateWeightageConstraints({
+        jdId: jd_id,
+        constraints,
+        userId,
+      })
+
+      res.status(200).json({
+        success: result.updated,
+        message: result.message,
+        data: null,
       })
     } catch (error) {
       next(error)
@@ -323,23 +355,25 @@ export const jdController = {
 
   async updateQa(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      if (!tempEditJdId || !tempEditUpdateContext || !tempEditStep) {
+      const userId = req.userId!
+      const editSession = jdEditSessionStore.get(userId)
+
+      if (!editSession) {
         throw new AppError('No active QA edit session. Call POST /api/jd/edit_qa first.', 400)
       }
 
       const { answer } = req.body
-      const userId = req.userId!
 
       const result = await jdService.updateQa({
         answer,
         userId,
-        updateContext: tempEditUpdateContext,
-        step: tempEditStep,
-        jdId: tempEditJdId,
+        updateContext: editSession.updateContext,
+        step: editSession.step,
+        jdId: editSession.jdId,
       })
 
       if (result.isCompleted) {
-        clearEditTempState()
+        clearJdEditSession(userId)
         res.status(200).json({
           success: true,
           message: 'QA answer updated successfully',
@@ -348,8 +382,11 @@ export const jdController = {
         return
       }
 
-      tempEditUpdateContext = result.updateContext
-      tempEditStep = result.step
+      jdEditSessionStore.set(userId, {
+        ...editSession,
+        updateContext: result.updateContext,
+        step: result.step,
+      })
 
       res.status(200).json({
         success: true,

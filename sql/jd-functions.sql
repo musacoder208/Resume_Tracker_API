@@ -532,10 +532,10 @@ BEGIN
     h.session_id,
     st.status_name,
     st.status_code,
-	CASE
-	    WHEN d.jd_theory IS NOT NULL THEN d.jd_theory
-	    ELSE NULL
-	END                             AS theory,
+    CASE
+        WHEN d.jd_theory IS NOT NULL THEN d.jd_theory
+        ELSE NULL
+    END                              AS theory,
     d.qa_history                     AS data_blob,
     (w.weightage_json -> 'weights')  AS weightage_json,
     (w.weightage_id IS NOT NULL)     AS is_weightage,
@@ -801,6 +801,19 @@ DECLARE
   v_weightage_id INT;
   v_cap          JSONB;
 BEGIN
+
+  -- Add isSelected: true to every constraint object (INSERT and UPDATE)
+  p_weightage_json := jsonb_set(
+    p_weightage_json,
+    '{weights,constraints}',
+    COALESCE(
+      (
+        SELECT jsonb_agg(elem || '{"isSelected": true}'::jsonb)
+        FROM jsonb_array_elements(p_weightage_json -> 'weights' -> 'constraints') AS elem
+      ),
+      '[]'::jsonb
+    )
+  );
 
   SELECT weightage_id INTO v_weightage_id
   FROM mechsoft.tbl_jd_weightage_header
@@ -1128,6 +1141,75 @@ BEGIN
     modified_date = NOW()
   WHERE jd_id      = p_jd_id
     AND is_deleted = FALSE;
+
+  RETURN FOUND;
+END;
+$$;
+
+
+-- ------------------------------------------------------------
+-- tbl_jd_weightage_header_audit
+-- Stores a snapshot of tbl_jd_weightage_header before each
+-- constraints update.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mechsoft.tbl_jd_weightage_header_audit (
+  audit_id       SERIAL      PRIMARY KEY,
+  weightage_id   INT         NOT NULL,
+  jd_id          INT         NOT NULL,
+  weightage_json JSONB,
+  audit_by       INT         NOT NULL,
+  audit_date     TIMESTAMP   NOT NULL DEFAULT NOW()
+);
+
+
+-- ------------------------------------------------------------
+-- fn_update_jd_weightage_constraints
+-- 1. Archives current tbl_jd_weightage_header row to audit.
+-- 2. Updates only the weights->constraints path in weightage_json.
+-- Returns TRUE if updated, FALSE if no weightage found for jd_id.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_update_jd_weightage_constraints(
+  p_jd_id       INT,
+  p_constraints JSONB,
+  p_user_id     INT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_weightage_id INT;
+BEGIN
+
+  SELECT weightage_id INTO v_weightage_id
+  FROM mechsoft.tbl_jd_weightage_header
+  WHERE jd_id = p_jd_id
+  LIMIT 1;
+
+  IF v_weightage_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Archive current record before update
+  INSERT INTO mechsoft.tbl_jd_weightage_header_audit (
+    weightage_id,
+    jd_id,
+    weightage_json,
+    audit_by,
+    audit_date
+  )
+  SELECT
+    weightage_id,
+    jd_id,
+    weightage_json,
+    p_user_id,
+    NOW()
+  FROM mechsoft.tbl_jd_weightage_header
+  WHERE weightage_id = v_weightage_id;
+
+  -- Update only constraints inside weights object
+  UPDATE mechsoft.tbl_jd_weightage_header
+  SET weightage_json = jsonb_set(weightage_json, '{weights,constraints}', p_constraints)
+  WHERE weightage_id = v_weightage_id;
 
   RETURN FOUND;
 END;

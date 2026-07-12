@@ -3,7 +3,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { validate, validateQuery } from '@shared/validators/validate'
-import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, getCandidateListSchema } from './schemas/candidate.schema'
+import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema } from './schemas/candidate.schema'
 import { candidateController } from './candidate.controller'
 
 const storage = multer.diskStorage({
@@ -27,7 +27,12 @@ router.post('/selectCandidateFiles', upload.array('files'), candidateController.
 router.post('/saveCandidates', validate(saveCandidatesSchema), candidateController.saveCandidates)
 router.get('/getCandidateList', validateQuery(getCandidateListSchema), candidateController.getCandidateList)
 router.get('/getCandidateDetails/:id', candidateController.getCandidateDetailsById)
+router.get('/previewResume/:id', candidateController.previewResume)
 router.get('/getFeedbackTypes', candidateController.getFeedbackTypes)
+router.get('/getHRQuestions', candidateController.getHRQuestions)
+router.put('/updateCandidateDetails', validate(updateCandidateDetailsSchema), candidateController.updateCandidateDetails)
+router.post('/saveHRAnswers', validate(saveHRAnswersSchema), candidateController.saveHRAnswers)
+router.get('/getHRAnswers', candidateController.getHRAnswers)
 router.post('/saveHRFeedback', validate(saveHRFeedbackSchema), candidateController.saveHRFeedback)
 router.post('/saveCandidateFeedback', validate(saveCandidateFeedbackSchema), candidateController.saveCandidateFeedback)
 router.post('/updateCandidateScore', validate(updateCandidateScoreSchema), candidateController.updateCandidateScore)

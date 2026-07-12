@@ -80,6 +80,11 @@ export const publishJdSchema = z.object({
   jd_id: z.number().int().positive('jd_id must be a positive integer'),
 })
 
+export const updateWeightageConstraintsSchema = z.object({
+  jd_id:       z.number().int().positive('jd_id must be a positive integer'),
+  constraints: z.array(z.unknown()).min(1, 'constraints must be a non-empty array'),
+})
+
 export type AnswerJdDto = z.infer<typeof answerJdSchema>
 export type GetAllJdsDto = z.infer<typeof getAllJdsSchema>
 export type JdByIdDto = z.infer<typeof jdByIdSchema>
@@ -89,3 +94,4 @@ export type UpdateTheoryDto = z.infer<typeof updateTheorySchema>
 export type EditQaDto = z.infer<typeof editQaSchema>
 export type UpdateQaDto = z.infer<typeof updateQaSchema>
 export type PublishJdDto = z.infer<typeof publishJdSchema>
+export type UpdateWeightageConstraintsDto = z.infer<typeof updateWeightageConstraintsSchema>

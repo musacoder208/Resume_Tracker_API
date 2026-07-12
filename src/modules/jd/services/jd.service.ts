@@ -507,6 +507,20 @@ export const jdService = {
     }
   },
 
+  async updateWeightageConstraints(params: {
+    jdId: number
+    constraints: unknown[]
+    userId: number
+  }): Promise<{ updated: boolean; message: string }> {
+    const updated = await jdRepository.updateWeightageConstraints(params)
+    if (!updated) {
+      logger.warn('updateWeightageConstraints — no weightage found for JD', { jdId: params.jdId })
+      return { updated: false, message: 'No weightage found for this JD.' }
+    }
+    logger.info('JD weightage constraints updated', { jdId: params.jdId })
+    return { updated: true, message: 'Weightage constraints updated successfully.' }
+  },
+
   async publishJd(params: { jdId: number; userId: number }): Promise<{ published: boolean; message: string }> {
     const published = await jdRepository.publishJd(params)
     if (!published) {

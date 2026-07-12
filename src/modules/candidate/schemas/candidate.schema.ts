@@ -16,6 +16,21 @@ export const saveCandidateFeedbackSchema = z.object({
   user_feedback:    z.string().min(1, 'user_feedback is required'),
 })
 
+export const updateCandidateDetailsSchema = z.object({
+  candidate_id:      z.number().int().positive('candidate_id is required'),
+  email:             z.string().email('Invalid email').min(1, 'email is required'),
+  phone:             z.string().min(1, 'phone is required'),
+  total_experience:  z.number().min(0, 'total_experience must be 0 or more'),
+})
+
+export const saveHRAnswersSchema = z.object({
+  candidate_id: z.number().int().positive('candidate_id is required'),
+  answers: z.array(z.object({
+    question_key: z.string().min(1, 'question_key is required'),
+    answer_text:  z.string(),
+  })).min(1, 'At least one answer is required'),
+})
+
 export const saveHRFeedbackSchema = z.object({
   candidate_id: z.number().int().positive('candidate_id is required'),
   feedbacks: z.array(z.object({
@@ -35,6 +50,8 @@ export const getCandidateListSchema = z.object({
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })
 
+export type UpdateCandidateDetailsDto = z.infer<typeof updateCandidateDetailsSchema>
+export type SaveHRAnswersDto          = z.infer<typeof saveHRAnswersSchema>
 export type SaveCandidatesDto        = z.infer<typeof saveCandidatesSchema>
 export type UpdateCandidateScoreDto  = z.infer<typeof updateCandidateScoreSchema>
 export type SaveCandidateFeedbackDto = z.infer<typeof saveCandidateFeedbackSchema>

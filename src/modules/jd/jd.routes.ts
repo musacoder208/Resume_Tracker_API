@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { validate, validateQuery, validateParams } from '@shared/validators/validate'
-import { answerJdSchema, getAllJdsSchema, jdByIdSchema, generateWeightageSchema, updateWeightageSchema, updateTheorySchema, editQaSchema, updateQaSchema, publishJdSchema } from './schemas/jd.schema'
+import { answerJdSchema, getAllJdsSchema, jdByIdSchema, generateWeightageSchema, updateWeightageSchema, updateTheorySchema, editQaSchema, updateQaSchema, publishJdSchema, updateWeightageConstraintsSchema } from './schemas/jd.schema'
 import { jdController } from './jd.controller'
 
 const router = Router()
@@ -19,6 +19,7 @@ router.post('/update_theory', validate(updateTheorySchema), jdController.updateT
 router.post('/edit_qa', validate(editQaSchema), jdController.editQa)
 router.post('/update_qa', validate(updateQaSchema), jdController.updateQa)
 router.put('/publishJd', validate(publishJdSchema), jdController.publishJd)
+router.put('/updateWeightageConstraints', validate(updateWeightageConstraintsSchema), jdController.updateWeightageConstraints)
 router.get('/getJDDropdown', jdController.getJDDropdown)
 
 export default router

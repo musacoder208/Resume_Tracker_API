@@ -1,10 +1,12 @@
+import fs from 'fs'
+import path from 'path'
 import type { Response, NextFunction } from 'express'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
 import logger from '@shared/logger/logger'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, GetCandidateListDto } from './schemas/candidate.schema'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto } from './schemas/candidate.schema'
 
 export const candidateController = {
   async uploadResumes(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
@@ -267,6 +269,134 @@ export const candidateController = {
         },
         requestId: req.traceId,
       })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async updateCandidateDetails(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { candidate_id, email, phone, total_experience } = req.body as UpdateCandidateDetailsDto
+
+      await candidateService.updateCandidateDetails({
+        candidateId:     candidate_id,
+        email,
+        phone,
+        totalExperience: total_experience,
+        modifiedBy:      userId,
+      })
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_DETAILS_UPDATED',
+        message: 'Candidate details updated successfully',
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async saveHRAnswers(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { candidate_id, answers } = req.body as SaveHRAnswersDto
+
+      await candidateService.saveHRAnswers({
+        candidateId: candidate_id,
+        answers: answers.map((a) => ({
+          questionKey: a.question_key,
+          answerText:  a.answer_text,
+        })),
+        createdBy: userId,
+      })
+
+      sendSuccess(res, {
+        code: 'HR_ANSWERS_SAVED',
+        message: 'HR answers saved successfully',
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getHRAnswers(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const companyId = req.tenantId
+      if (!companyId) throw new AppError('Unauthorized', 401)
+
+      const candidateId = parseInt(req.query.candidate_id as string, 10)
+      if (isNaN(candidateId) || candidateId <= 0) throw new AppError('candidate_id is required', 400)
+
+      const list = await candidateService.getHRAnswers(candidateId, companyId)
+
+      sendSuccess(res, {
+        code: 'HR_ANSWERS_FETCHED',
+        message: 'HR answers fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getHRQuestions(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const companyId = req.tenantId
+      if (!companyId) throw new AppError('Unauthorized', 401)
+
+      const list = await candidateService.getHRQuestions(companyId)
+
+      sendSuccess(res, {
+        code: 'HR_QUESTIONS_FETCHED',
+        message: 'HR questions fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async previewResume(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const candidateId = parseInt(req.params.id as string, 10)
+      if (isNaN(candidateId) || candidateId <= 0) throw new AppError('Invalid candidate ID', 400)
+
+      const { filePath, fileName } = await candidateService.getResumeFilePath(candidateId)
+
+      if (!fs.existsSync(filePath)) throw new AppError('Resume file not found on server', 404)
+
+      const ext = path.extname(fileName).toLowerCase()
+      const mimeTypes: Record<string, string> = {
+        '.pdf':  'application/pdf',
+        '.doc':  'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }
+      const mimeType = mimeTypes[ext] ?? 'application/octet-stream'
+      const disposition = ext === '.pdf' ? 'inline' : 'attachment'
+
+      res.setHeader('Content-Type', mimeType)
+      res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`)
+
+      logger.info('Resume preview requested', { candidateId, fileName, disposition })
+
+      fs.createReadStream(filePath).pipe(res)
     } catch (error) {
       next(error)
     }

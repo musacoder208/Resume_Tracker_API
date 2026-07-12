@@ -1051,3 +1051,35 @@ BEGIN
   );
 END;
 $$;
+
+
+-- ------------------------------------------------------------
+-- fn_update_candidate_details
+--    Updates email, phone and total_experience on the
+--    candidate header row. Returns TRUE if row was found
+--    and updated, FALSE if candidate_id does not exist.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION mechsoft.fn_update_candidate_details(
+  p_candidate_id     BIGINT,
+  p_email            VARCHAR,
+  p_phone            VARCHAR,
+  p_total_experience NUMERIC,
+  p_modified_by      INT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  UPDATE mechsoft.tbl_candidates_header
+  SET
+    email            = p_email,
+    phone            = p_phone,
+    total_experience = p_total_experience,
+    modified_by      = p_modified_by,
+    modified_date    = NOW()
+  WHERE candidate_id = p_candidate_id
+    AND is_deleted   = FALSE;
+
+  RETURN FOUND;
+END;
+$$;

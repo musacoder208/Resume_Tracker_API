@@ -171,42 +171,7 @@ export const candidateService = {
       { jdId, orgId, createdBy }
     )
 
-    // ----- COMMENTED OUT: Node.js save logic (Python now handles this) -----
-    // async (item) => {
-    //   item.resume_file_path = filePathMap.get(item.filename) ?? null
-    //   if (item.status === 'incomplete' || item.status === 'failed') {
-    //     push({ ...item, reason: 'Incomplete resume data', isSelected: false }); return
-    //   }
-    //   if (item.status === 'success' && item.position_relevance?.match === false) {
-    //     push({ ...item, reason: item.position_relevance.reason, isSelected: false }); return
-    //   }
-    //   const pi = item.personal_info as Record<string, { value: string | null }> | undefined
-    //   const fullName = pi?.full_name?.value ?? ''
-    //   const email    = pi?.email?.value ?? ''
-    //   const phone    = pi?.phone?.value ?? ''
-    //   const batchKey = `${fullName.toLowerCase()}|${email.toLowerCase()}|${phone}`
-    //   if (batchSeen.has(batchKey)) {
-    //     push({ ...item, reason: 'Duplicate within uploaded batch', isSelected: false }); return
-    //   }
-    //   batchSeen.set(batchKey, true)
-    //   const exists = await candidateRepository.checkDuplicate(fullName, email, phone)
-    //   if (exists) {
-    //     push({ ...item, reason: 'Already exists in system', isSelected: false }); return
-    //   }
-    //   const pro        = (item.professional_info ?? {}) as Record<string, unknown>
-    //   const education  = ((pro.education as { value: object[] } | undefined)?.value ?? [])
-    //   const experience = ((pro.Experience as { value: object[] } | undefined)?.value ?? [])
-    //   const techSkills = ((pro.technical_stack_and_tools as { value: string[] } | undefined)?.value ?? [])
-    //   const coreSkills = ((pro.core_skills as { value: string[] } | undefined)?.value ?? [])
-    //   const softSkills = ((pro.soft_skills as { value: string[] } | undefined)?.value ?? [])
-    //   const candidateId = await candidateRepository.saveCandidateDetails({
-    //     jdId, fullName, email, phone, uploadStatus: 'success', reason: null, createdBy, ...
-    //   })
-    //   push({ ...item, candidate_id: candidateId, isSelected: true })
-    // },
-    // -------------------------------------------------------------------------
-
-    cleanupFiles(valid.map((v) => v.file))
+    // Files are kept in uploads/ — required for resume preview/download
   },
 
   async getUploadStatus(jdId: number): Promise<{
@@ -312,6 +277,45 @@ export const candidateService = {
     logger.info('Candidate feedback saved', { candidateId: params.candidateId, feedbackTypeId: params.feedbackTypeId })
   },
 
+  async updateCandidateDetails(params: {
+    candidateId:     number
+    email:           string
+    phone:           string
+    totalExperience: number
+    modifiedBy:      number
+  }): Promise<void> {
+    const updated = await candidateRepository.updateCandidateDetails(params)
+    if (!updated) throw new AppError('Candidate not found', 404)
+    logger.info('Candidate details updated', { candidateId: params.candidateId })
+  },
+
+  async saveHRAnswers(params: {
+    candidateId: number
+    answers: Array<{ questionKey: string; answerText: string }>
+    createdBy: number
+  }): Promise<void> {
+    await candidateRepository.saveHRAnswers(params)
+    logger.info('HR answers saved', { candidateId: params.candidateId, count: params.answers.length })
+  },
+
+  async getHRAnswers(candidateId: number, companyId: number): Promise<Record<string, unknown>[]> {
+    const list = await candidateRepository.getHRAnswers(candidateId, companyId)
+    logger.info('HR answers fetched', { candidateId, companyId, count: list.length })
+    return list
+  },
+
+  async getHRQuestions(companyId: number): Promise<Record<string, unknown>[]> {
+    const list = await candidateRepository.getHRQuestions(companyId)
+    logger.info('HR questions fetched', { companyId, count: list.length })
+    return list
+  },
+
+  async getResumeFilePath(candidateId: number): Promise<{ filePath: string; fileName: string }> {
+    const result = await candidateRepository.getResumeFilePath(candidateId)
+    if (!result) throw new AppError('Resume file not found', 404)
+    return result
+  },
+
   async getCandidateDetailsById(candidateId: number): Promise<Record<string, unknown>> {
     const details = await candidateRepository.getCandidateDetailsById(candidateId)
     if (!details) {
@@ -352,6 +356,10 @@ export const candidateService = {
       throw new AppError('No weightage found for this JD', 404)
     }
     const weightsOnly = (weightageRaw.weights as Record<string, unknown>) ?? weightageRaw
+
+    // Filter constraints to only isSelected: true items before sending to Python
+    const allConstraints = Array.isArray(weightsOnly.constraints) ? weightsOnly.constraints as Record<string, unknown>[] : []
+    weightsOnly.constraints = allConstraints.filter(c => c.isSelected === true)
 
     // Step 2: Get only the requested candidates for this JD from DB
     const candidates = await candidateRepository.getCandidatesForScoring(jdId, candidateIds)

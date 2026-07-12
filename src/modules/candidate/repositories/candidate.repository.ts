@@ -242,6 +242,94 @@ export const candidateRepository = {
     }
   },
 
+  async updateCandidateDetails(params: {
+    candidateId:     number
+    email:           string
+    phone:           string
+    totalExperience: number
+    modifiedBy:      number
+  }): Promise<boolean> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_update_candidate_details($1, $2, $3, $4, $5) AS updated',
+        [params.candidateId, params.email, params.phone, params.totalExperience, params.modifiedBy]
+      )
+      return result.rows[0]?.updated === true
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; code?: string }
+      logger.error('DB error in updateCandidateDetails', { message: e.message, detail: e.detail, code: e.code })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async saveHRAnswers(params: {
+    candidateId: number
+    answers: Array<{ questionKey: string; answerText: string }>
+    createdBy: number
+  }): Promise<void> {
+    try {
+      const answersJson = JSON.stringify(
+        params.answers.map((a) => ({
+          question_key: a.questionKey,
+          answer_text:  a.answerText,
+        }))
+      )
+      await pool.query(
+        'SELECT mechsoft.fn_save_hr_answers($1, $2::jsonb, $3)',
+        [params.candidateId, answersJson, params.createdBy]
+      )
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; code?: string }
+      logger.error('DB error in saveHRAnswers', { message: e.message, detail: e.detail, code: e.code })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getHRAnswers(candidateId: number, companyId: number): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_hr_answers($1, $2) AS data',
+        [candidateId, companyId]
+      )
+      const data = result.rows[0]?.data
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      logger.error('DB error in getHRAnswers', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getHRQuestions(companyId: number): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_hr_questions($1) AS data',
+        [companyId]
+      )
+      const data = result.rows[0]?.data
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      logger.error('DB error in getHRQuestions', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getResumeFilePath(candidateId: number): Promise<{ filePath: string; fileName: string } | null> {
+    try {
+      const result = await pool.query(
+        `SELECT resume_file_path, resume_file_name
+         FROM mechsoft.tbl_candidates_header
+         WHERE candidate_id = $1 AND is_deleted = FALSE`,
+        [candidateId]
+      )
+      const row = result.rows[0]
+      if (!row || !row.resume_file_path) return null
+      return { filePath: row.resume_file_path as string, fileName: row.resume_file_name as string }
+    } catch (error) {
+      logger.error('DB error in getResumeFilePath', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
   async getCandidateDetailsById(candidateId: number): Promise<Record<string, unknown> | null> {
     try {
       const result = await pool.query(
