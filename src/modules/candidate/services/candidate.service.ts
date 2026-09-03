@@ -331,6 +331,7 @@ export const candidateService = {
     verdict?: string
     experienceRange?: string
     statusId?: number
+    hrStatusCode?: string
     page: number
     pageSize: number
   }): Promise<{

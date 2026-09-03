@@ -43,6 +43,7 @@ export const commonService = {
         seniorities,
         statuses,
         feedbackStatuses,
+        hrStatuses,
       ] = await Promise.all([
         pool.query(
           'SELECT id, industry_type_name AS name FROM public.mst_industry_type WHERE is_active = TRUE ORDER BY industry_type_name'
@@ -83,6 +84,9 @@ export const commonService = {
         pool.query(
           'SELECT id, status_name AS name FROM public.mst_feedbackstatus ORDER BY id'
         ),
+        pool.query(
+          'SELECT status_id AS id, status AS name, status_code AS code FROM mechsoft.tbl_hr_status ORDER BY status_id'
+        ),
       ])
 
       const statusesByModule = statuses.rows.reduce<Record<number, { id: number; name: string }[]>>(
@@ -96,16 +100,17 @@ export const commonService = {
       )
 
       return {
-        industryTypes:    industryTypes.rows,
-        companySizes:     companySizes.rows,
-        countries:        countries.rows,
-        states:           states.rows,
-        cities:           cities.rows,
-        jobTitles:        jobTitles.rows,
-        modules:          modules.rows,
-        seniorities:      seniorities.rows,
-        statuses:         statusesByModule,
+        industryTypes: industryTypes.rows,
+        companySizes: companySizes.rows,
+        countries: countries.rows,
+        states: states.rows,
+        cities: cities.rows,
+        jobTitles: jobTitles.rows,
+        modules: modules.rows,
+        seniorities: seniorities.rows,
+        statuses: statusesByModule,
         feedbackStatuses: feedbackStatuses.rows,
+        hrStatuses: hrStatuses.rows,
       }
     } catch (error) {
       logger.error('DB error in getMasterDataList', { error })

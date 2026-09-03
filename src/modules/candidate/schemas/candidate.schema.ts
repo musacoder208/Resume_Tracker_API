@@ -46,6 +46,7 @@ export const getCandidateListSchema = z.object({
   verdict:           z.string().optional(),
   experience_range:  z.enum(['0-1', '1-3', '3-5', '5-8', '8+']).optional(),
   status_id:         z.coerce.number().int().positive().optional(),
+  hr_status_code:    z.string().optional(),
   page:              z.coerce.number().int().positive().default(1),
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })

@@ -242,7 +242,7 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
-      const { jd_id, search_text, verdict, experience_range, status_id, page, page_size } = req.query as unknown as GetCandidateListDto
+      const { jd_id, search_text, verdict, experience_range, status_id, hr_status_code, page, page_size } = req.query as unknown as GetCandidateListDto
 
       const { summary, candidates, totalCount, totalPages } = await candidateService.getCandidateList({
         jdId:             jd_id,
@@ -250,6 +250,7 @@ export const candidateController = {
         verdict:          verdict,
         experienceRange:  experience_range,
         statusId:         status_id,
+        hrStatusCode:     hr_status_code,
         page:             page ?? 1,
         pageSize:         page_size ?? 20,
       })
