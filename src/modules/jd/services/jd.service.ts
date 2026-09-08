@@ -170,6 +170,7 @@ export const jdService = {
 
     const answerResponse = await pythonClient.answerJd({
       session_id: params.sessionId,
+      org_id: String(params.companyId),
       user_id: String(params.userId),
       field_key: params.nextQuestion.field_key,
       answer: params.answer,
@@ -205,6 +206,8 @@ export const jdService = {
     // TODO: confirm with Python dev whether rendered_text comes in data when completed
     const finalizeResponse = await pythonClient.finalizeJd({
       id: String(jdId),
+      org_id: String(params.companyId),
+      user_id: String(params.userId),
       data: {
         field_values: answerResponse.data.field_values ?? {},
       },
@@ -240,6 +243,7 @@ export const jdService = {
     const companyInfo = await getCompanyOrgDna(params.companyId)
 
     const weightsResponse = await pythonClient.generateWeights({
+      org_id: String(params.companyId),
       jd_id: String(params.jdId),
       field_values: (jdDetails.dataBlob?.field_values as Record<string, unknown>) ?? {},
       field_progress: (jdDetails.dataBlob?.field_progress as Record<string, unknown>) ?? {},
@@ -279,6 +283,7 @@ export const jdService = {
     forceOverride: boolean
     conversationHistory: unknown[]
     userId: number
+    companyId: number
   }) {
     // const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
     // if (!jdDetails) {
@@ -291,6 +296,7 @@ export const jdService = {
     // const companyInfo = await getCompanyOrgDna(params.companyId)
 
     const adjustResponse = await pythonClient.adjustWeights({
+      org_id: String(params.companyId),
       jd_id: String(params.jdId),
       field_values: params.fieldValues,
       current_weights: params.currentWeights,
@@ -371,6 +377,7 @@ export const jdService = {
     fieldValues: Record<string, unknown>
     renderedText: string
     userId: number
+    companyId: number
   }): Promise<JdUpdateTextResponse> {
     // const jdDetails = await jdRepository.getJdDetailsById(params.jdId)
     // if (!jdDetails) {
@@ -381,6 +388,7 @@ export const jdService = {
     // }
 
     const pythonResponse = await pythonClient.updateText({
+      org_id: String(params.companyId),
       jd_id: String(params.jdId),
       field_values: params.fieldValues,
       edit_command: params.editCommand,
@@ -434,6 +442,7 @@ export const jdService = {
     const updateContext = startResponse.state.update_context
 
     const respondResponse = await pythonClient.updateFieldRespond({
+      org_id: String(params.companyId),
       user_id: String(params.userId),
       update_context: updateContext,
       action: 'answer',
@@ -451,6 +460,7 @@ export const jdService = {
   async updateQa(params: {
     answer: string
     userId: number
+    companyId: number
     updateContext: Record<string, unknown>
     step: string
     jdId: number
@@ -463,6 +473,7 @@ export const jdService = {
     const action = params.step === 'final_confirm' ? 'confirm' : 'answer'
 
     const respondResponse = await pythonClient.updateFieldRespond({
+      org_id: String(params.companyId),
       user_id: String(params.userId),
       update_context: params.updateContext,
       action,

@@ -120,7 +120,9 @@ async function processExtracted(rawItems: ExtractedResumeRaw[]): Promise<Extract
 export const candidateService = {
   async uploadResumes(
     files: Express.Multer.File[],
-    positionTitle: string
+    positionTitle: string,
+    orgId: number,
+    userId: number
   ): Promise<
     | { status: 'partial'; success: Omit<ValidFile, 'file'>[]; incomplete: Array<{ filename: string; reason: string }> }
     | ({ status: 'extracted' } & ExtractResult)
@@ -137,7 +139,7 @@ export const candidateService = {
     }
 
     const filePathMap = new Map(valid.map((v) => [v.file.originalname, v.file.path]))
-    const rawItems = await resumeExtractClient.extractResumes(valid.map((v) => v.file), positionTitle)
+    const rawItems = await resumeExtractClient.extractResumes(valid.map((v) => v.file), positionTitle, orgId, userId)
     cleanupFiles(valid.map((v) => v.file))
     rawItems.forEach((item) => { item.resume_file_path = filePathMap.get(item.filename) ?? null })
     const result = await processExtracted(rawItems)
@@ -167,6 +169,8 @@ export const candidateService = {
     await resumeExtractClient.extractResumes(
       valid.map((v) => v.file),
       positionTitle,
+      orgId,
+      createdBy,
       undefined, // no onResult — Python saves directly
       { jdId, orgId, createdBy }
     )
@@ -186,10 +190,12 @@ export const candidateService = {
 
   async selectCandidateFiles(
     files: Express.Multer.File[],
-    positionTitle: string
+    positionTitle: string,
+    orgId: number,
+    userId: number
   ): Promise<{ status: 'extracted' } & ExtractResult> {
     const filePathMap = new Map(files.map((f) => [f.originalname, f.path]))
-    const rawItems = await resumeExtractClient.extractResumes(files, positionTitle)
+    const rawItems = await resumeExtractClient.extractResumes(files, positionTitle, orgId, userId)
     cleanupFiles(files)
     rawItems.forEach((item) => { item.resume_file_path = filePathMap.get(item.filename) ?? null })
     const result = await processExtracted(rawItems)
@@ -278,11 +284,11 @@ export const candidateService = {
   },
 
   async updateCandidateDetails(params: {
-    candidateId:     number
-    email:           string
-    phone:           string
+    candidateId: number
+    email: string
+    phone: string
     totalExperience: number
-    modifiedBy:      number
+    modifiedBy: number
   }): Promise<void> {
     const updated = await candidateRepository.updateCandidateDetails(params)
     if (!updated) throw new AppError('Candidate not found', 404)
@@ -349,7 +355,8 @@ export const candidateService = {
   async updateCandidateScore(
     jdId: number,
     candidateIds: number[],
-    createdBy: number
+    createdBy: number,
+    orgId: number
   ): Promise<{ totalScored: number }> {
     // Step 1: Get JD weightage and extract weights object
     const weightageRaw = await candidateRepository.getJDWeightage(jdId)
@@ -368,23 +375,10 @@ export const candidateService = {
       throw new AppError('No candidates found for the provided IDs', 404)
     }
 
-    // Step 3: Call Python scoring API
-    const scoreResponse = await resumeExtractClient.scoreResumes(weightsOnly, candidates)
+    // Step 3: Call Python scoring API — Python saves each score directly via fn_add_update_candidate_score
+    const scoreResponse = await resumeExtractClient.scoreResumes(weightsOnly, candidates, orgId, createdBy)
 
-    // Step 4: Save each candidate score to DB
-    for (const result of scoreResponse.results) {
-      await candidateRepository.saveCandidateScore({
-        candidateId: Number(result.candidate_id),
-        baseScore: result.base_score,
-        finalScore: result.final_score,
-        verdict: result.verdict,
-        scoreJson: result,
-        groupBreakdown: result.group_breakdown as Record<string, unknown>,
-        createdBy,
-      })
-    }
-
-    logger.info('Candidate scores updated', { jdId, totalScored: scoreResponse.results.length })
-    return { totalScored: scoreResponse.results.length }
+    logger.info('Candidate scores updated', { jdId, totalScored: scoreResponse.totalScored })
+    return { totalScored: scoreResponse.totalScored }
   },
 }

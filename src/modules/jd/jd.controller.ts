@@ -138,6 +138,7 @@ export const jdController = {
     try {
       const { jd_id, user_command, field_values, current_weights, company_info, force_override, conversation_history } = req.body
       const userId = req.userId!
+      const companyId = req.tenantId!
 
       const data = await jdService.updateWeightage({
         jdId: jd_id,
@@ -148,6 +149,7 @@ export const jdController = {
         forceOverride: force_override,
         conversationHistory: conversation_history,
         userId,
+        companyId,
       })
 
       if (!data.success) {
@@ -264,6 +266,7 @@ export const jdController = {
     try {
       const { jd_id, edit_command, field_values, rendered_text } = req.body
       const userId = req.userId!
+      const companyId = req.tenantId!
 
       const data = await jdService.updateTheory({
         jdId: jd_id,
@@ -271,6 +274,7 @@ export const jdController = {
         fieldValues: field_values,
         renderedText: rendered_text,
         userId,
+        companyId,
       })
 
       res.status(200).json({
@@ -363,10 +367,12 @@ export const jdController = {
       }
 
       const { answer } = req.body
+      const companyId = req.tenantId!
 
       const result = await jdService.updateQa({
         answer,
         userId,
+        companyId,
         updateContext: editSession.updateContext,
         step: editSession.step,
         jdId: editSession.jdId,

@@ -14,6 +14,9 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
+      const orgId = req.tenantId
+      if (!orgId) throw new AppError('Unauthorized', 401)
+
       const positionTitle = req.body?.position_title as string | undefined
       if (!positionTitle || !positionTitle.trim()) {
         throw new AppError('position_title is required', 400)
@@ -24,7 +27,7 @@ export const candidateController = {
         throw new AppError('No files uploaded', 400)
       }
 
-      const result = await candidateService.uploadResumes(files, positionTitle.trim())
+      const result = await candidateService.uploadResumes(files, positionTitle.trim(), orgId, userId)
 
       sendSuccess(res, {
         code: 'RESUMES_UPLOADED',
@@ -94,6 +97,9 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
+      const orgId = req.tenantId
+      if (!orgId) throw new AppError('Unauthorized', 401)
+
       const positionTitle = req.body?.position_title as string | undefined
       if (!positionTitle || !positionTitle.trim()) {
         throw new AppError('position_title is required', 400)
@@ -104,7 +110,7 @@ export const candidateController = {
         throw new AppError('No files uploaded', 400)
       }
 
-      const result = await candidateService.selectCandidateFiles(files, positionTitle.trim())
+      const result = await candidateService.selectCandidateFiles(files, positionTitle.trim(), orgId, userId)
 
       sendSuccess(res, {
         code: 'CANDIDATE_FILES_SELECTED',
@@ -408,9 +414,12 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
+      const orgId = req.tenantId
+      if (!orgId) throw new AppError('Unauthorized', 401)
+
       const { jd_id, candidate_ids } = req.body as UpdateCandidateScoreDto
 
-      const result = await candidateService.updateCandidateScore(jd_id, candidate_ids, userId)
+      const result = await candidateService.updateCandidateScore(jd_id, candidate_ids, userId, orgId)
 
       sendSuccess(res, {
         code: 'CANDIDATE_SCORES_UPDATED',

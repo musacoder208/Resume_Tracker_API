@@ -37,6 +37,7 @@ export const companyProfileService = {
   }> {
     const answerRequest: QAAnswerRequest = {
       session_id: params.sessionId,
+      org_id: String(params.tenantId),
       user_id: String(params.userId),
       field_key: params.nextQuestion.field_key,
       answer: params.answer,
@@ -79,7 +80,7 @@ export const companyProfileService = {
           return [key, f.raw_answer ?? f.value ?? null]
         })
       )
-      const finalizeResponse = await aiClient.finalizeProfile(params.tenantId, simplifiedSnapshot)
+      const finalizeResponse = await aiClient.finalizeProfile(params.tenantId, simplifiedSnapshot, params.userId)
 
       await companyProfileRepository.addUpdateCompanyProfile(
         params.tenantId,
@@ -181,7 +182,8 @@ export const companyProfileService = {
       userId,
       startResponse.state.update_context,
       'answer',
-      answer
+      answer,
+      tenantId
     )
 
     logger.info('Edit question initiated', { tenantId, fieldKey, step: respondResponse.step })
@@ -203,7 +205,7 @@ export const companyProfileService = {
   ) {
     const action = step === 'final_confirm' ? 'confirm' : 'answer'
 
-    const aiResponse = await aiClient.respondToUpdate(userId, updateContext, action, answer)
+    const aiResponse = await aiClient.respondToUpdate(userId, updateContext, action, answer, tenantId)
 
     if (aiResponse.cancelled) {
       return { completed: false, cancelled: true, message: 'Update cancelled' }
@@ -270,7 +272,7 @@ export const companyProfileService = {
         return [key, f.raw_answer ?? f.value ?? null]
       })
     )
-    const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot)
+    const finalizeResponse = await aiClient.finalizeProfile(tenantId, simplifiedSnapshot, userId)
 
     await companyProfileRepository.addUpdateCompanyProfile(
       tenantId,

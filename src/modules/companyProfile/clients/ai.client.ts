@@ -136,12 +136,13 @@ export const aiClient = {
     userId: number,
     updateContext: Record<string, unknown>,
     action: string,
-    answer: string
+    answer: string,
+    orgId: number
   ): Promise<UpdateRespondResponse> {
     try {
       const response = await httpClient.post<UpdateRespondResponse>(
         `${AI_BASE}/api/org-dna/update-field/respond`,
-        { user_id: String(userId), update_context: updateContext, action, answer }
+        { org_id: String(orgId), user_id: String(userId), update_context: updateContext, action, answer }
       )
       logger.info('AI /org-dna/update-field/respond called', { action })
       return response.data
@@ -155,11 +156,11 @@ export const aiClient = {
   },
 
   // POST /finalize
-  async finalizeProfile(orgId: number, orgDnaSnapshot: Record<string, unknown>): Promise<FinalizeResponse> {
+  async finalizeProfile(orgId: number, orgDnaSnapshot: Record<string, unknown>, userId: number): Promise<FinalizeResponse> {
     try {
       const response = await httpClient.post<FinalizeResponse>(
         `${AI_BASE}/api/org-dna/finalize`,
-        { id: String(orgId), data: orgDnaSnapshot }
+        { id: String(orgId), org_id: String(orgId), user_id: String(userId), data: orgDnaSnapshot }
       )
       logger.info('AI /org-dna/finalize called', { orgId })
       return response.data

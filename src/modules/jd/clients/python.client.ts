@@ -57,6 +57,8 @@ export interface JdAnswerResponse {
 
 export interface JdFinalizeRequest {
   id: string
+  org_id: string
+  user_id: string
   data: {
     field_values: Record<string, unknown>
   }
@@ -75,6 +77,7 @@ export interface JdWeightageCapabilityDetail {
 }
 
 export interface JdGenerateWeightsRequest {
+  org_id: string
   field_values: Record<string, unknown>
   field_progress: Record<string, unknown>
   jd_id: string
@@ -84,6 +87,7 @@ export interface JdGenerateWeightsRequest {
 }
 
 export interface JdAdjustWeightsRequest {
+  org_id: string
   field_values: Record<string, unknown>
   jd_id: string
   user_command: string
@@ -124,6 +128,7 @@ export interface JdAdjustWeightsResponse {
 }
 
 export interface JdUpdateTextRequest {
+  org_id: string
   jd_id: string
   field_values: Record<string, unknown>
   edit_command: string
@@ -165,6 +170,7 @@ export interface JdUpdateFieldStartResponse {
 }
 
 export interface JdUpdateFieldRespondRequest {
+  org_id: string
   user_id: string
   update_context: Record<string, unknown>
   action: 'answer' | 'confirm' | 'skip'
