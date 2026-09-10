@@ -665,8 +665,20 @@ $$;
 -- ------------------------------------------------------------
 -- 5. fn_get_candidates_for_scoring
 --    Returns a JSONB array of candidate scoring payloads.
---    Each item contains: candidate_id, location (from
---    personal_info), and all professional_info fields merged.
+--    Each item contains:
+--      - candidate_id  : DB primary key (as text)
+--      - location      : cherry-picked from personal_info
+--      - professional_info fields merged at root level
+--        (job_title, Experience, education, technical_stack_and_tools,
+--         core_skills, soft_skills, certifications, total_years_experience, etc.)
+--    -- NEW fields added (from candidate_json root-level objects) --
+--      - career_analysis        : employment gaps, tenure, role switches, timeline
+--      - derived_signals        : company_type, communication_exposure, gender, etc.
+--      - role_scope_signals     : scope_of_responsibility, decision_autonomy, people_management
+--      - adaptability_signals   : learning_velocity, pressure_handling, ambiguity_tolerance
+--      - collaboration_signals  : collaboration_pattern, external_interaction_exposure
+--      - industry_domain_exposure : domains and industries worked in
+--      - work_environment_signals : work_structure, change_frequency
 --    p_candidate_ids filters to specific candidates within JD.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION mechsoft.fn_get_candidates_for_scoring(
@@ -681,10 +693,35 @@ DECLARE
 BEGIN
   SELECT jsonb_agg(
     jsonb_build_object(
+      -- Base identity fields
       'candidate_id', candidate_id::TEXT,
-      'location',     candidate_json -> 'personal_info' -> 'location' ->> 'value'
+      'location',     candidate_json -> 'personal_info' -> 'location' ->> 'value',
+
+      -- NEW: career history analysis (gaps, tenure, role switches, timeline)
+      'career_analysis',          candidate_json -> 'career_analysis',
+
+      -- NEW: derived signals (company_type, communication_exposure, gender, freelance)
+      'derived_signals',          candidate_json -> 'derived_signals',
+
+      -- NEW: role scope signals (scope_of_responsibility, decision_autonomy, people_management)
+      'role_scope_signals',       candidate_json -> 'role_scope_signals',
+
+      -- NEW: adaptability signals (learning_velocity, pressure_handling, ambiguity_tolerance)
+      'adaptability_signals',     candidate_json -> 'adaptability_signals',
+
+      -- NEW: collaboration signals (collaboration_pattern, external_interaction_exposure)
+      'collaboration_signals',    candidate_json -> 'collaboration_signals',
+
+      -- NEW: industry & domain exposure (industries and domains worked in)
+      'industry_domain_exposure', candidate_json -> 'industry_domain_exposure',
+
+      -- NEW: work environment signals (work_structure, change_frequency)
+      'work_environment_signals', candidate_json -> 'work_environment_signals'
     )
     ||
+    -- professional_info fields merged at root level
+    -- (job_title, Experience, education, technical_stack_and_tools,
+    --  core_skills, soft_skills, certifications, total_years_experience, etc.)
     (candidate_json -> 'professional_info')
   )
   INTO v_result
