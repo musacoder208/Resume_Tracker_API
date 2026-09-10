@@ -42,6 +42,7 @@ export interface QAStartRequest {
 // response must be passed back so Python can restore session state.
 export interface QAAnswerRequest {
   session_id: string
+  org_id: string
   user_id: string
   field_key: string
   answer: string

@@ -10,7 +10,7 @@ export const tenantMiddleware = async (req: Request, res: Response, next: NextFu
   const subdomain = host.split('.')[0];
 
   if (subdomain === 'localhost' || subdomain === 'default' || env.NODE_ENV === 'development' || isIP(host)) {
-      logger.error('start2');
+    logger.error('start2');
     (req as any).tenant = { companyId: env.DEFAULT_COMPANY_ID, subdomain: 'default' };
     return next();
   }
