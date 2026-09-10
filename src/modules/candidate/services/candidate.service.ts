@@ -338,6 +338,7 @@ export const candidateService = {
     experienceRange?: string
     statusId?: number
     hrStatusCode?: string
+    gender?: string
     page: number
     pageSize: number
   }): Promise<{

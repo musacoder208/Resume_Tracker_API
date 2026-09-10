@@ -125,12 +125,13 @@ export const candidateRepository = {
     experienceRange?: string
     statusId?: number
     hrStatusCode?: string
+    gender?: string
     page: number
     pageSize: number
   }): Promise<{ summary: Record<string, unknown>; totalCount: number; candidates: Record<string, unknown>[] }> {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6, $7, $8) AS result',
+        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6, $7, $8, $9) AS result',
         [
           params.jdId            ?? null,
           params.searchText      ?? null,
@@ -140,6 +141,7 @@ export const candidateRepository = {
           params.pageSize,
           params.statusId        ?? null,
           params.hrStatusCode    ?? null,
+          params.gender          ?? null,
         ]
       )
       const raw = result.rows[0]?.result as Record<string, unknown> ?? {}
