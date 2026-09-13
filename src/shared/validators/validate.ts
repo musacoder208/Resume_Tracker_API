@@ -8,7 +8,9 @@ function createValidator(source: 'body' | 'query' | 'params', schema: ZodSchema)
   return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req[source]);
     if (!result.success) {
-      const message = result.error.issues[0]?.message ?? 'Validation failed';
+      const issue = result.error.issues[0];
+      const path = issue?.path?.length ? issue.path.join('.') : source;
+      const message = issue ? `${path}: ${issue.message}` : 'Validation failed';
       return next(new AppError(message, 400, true));
     }
     req[source] = result.data;

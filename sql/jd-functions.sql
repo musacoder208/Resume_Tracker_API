@@ -1214,3 +1214,45 @@ BEGIN
   RETURN FOUND;
 END;
 $$;
+
+-- ------------------------------------------------------------
+-- fn_get_constraint_details
+-- Returns all constraints joined to their category, for
+-- categories that are active and not deleted.
+-- Used to populate the constraint picker on the JD weightage screen.
+-- ------------------------------------------------------------
+DROP FUNCTION IF EXISTS mechsoft.fn_get_constraint_details();
+
+CREATE OR REPLACE FUNCTION mechsoft.fn_get_constraint_details()
+RETURNS TABLE (
+  id           BIGINT,
+  category_id  BIGINT,
+  categoryname VARCHAR,
+  name         VARCHAR,
+  controls     VARCHAR,
+  "values"     TEXT[],
+  type         VARCHAR,
+  "isSelected" BOOLEAN
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    mc.id,
+    mc.category_id,
+    cc.category_name AS categoryname,
+    mc.name,
+    mc.controls,
+    mc.values,
+    mc.type,
+    FALSE AS "isSelected"
+  FROM mechsoft.mst_constraints mc
+  JOIN mechsoft.mst_constraints_category cc
+    ON cc.id = mc.category_id
+   AND cc.is_active  = TRUE
+   AND cc.is_deleted = FALSE
+  WHERE mc.is_deleted = FALSE
+  ORDER BY mc.category_id, mc.id;
+END;
+$$;

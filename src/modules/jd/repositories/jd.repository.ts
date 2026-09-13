@@ -374,4 +374,32 @@ export const jdRepository = {
       throw new AppError('Database error', 500)
     }
   },
+
+  async getConstraintDetails(): Promise<Array<{
+    id: number
+    categoryId: number
+    categoryName: string
+    name: string
+    controls: string | null
+    values: string[] | null
+    type: string | null
+    isSelected: boolean
+  }>> {
+    try {
+      const result = await pool.query('SELECT * FROM mechsoft.fn_get_constraint_details()')
+      return result.rows.map((row) => ({
+        id:           Number(row.id),
+        categoryId:   Number(row.category_id),
+        categoryName: row.categoryname as string,
+        name:         row.name as string,
+        controls:     row.controls as string | null,
+        values:       row.values as string[] | null,
+        type:         row.type as string | null,
+        isSelected:   row.isSelected as boolean,
+      }))
+    } catch (error) {
+      logger.error('DB error in getConstraintDetails', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
 }

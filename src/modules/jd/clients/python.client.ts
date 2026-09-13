@@ -82,8 +82,31 @@ export interface JdGenerateWeightsRequest {
   field_progress: Record<string, unknown>
   jd_id: string
   company_info: Record<string, unknown>
-  additional_notes: string
+  additional_notes: Array<{ id: string; instruction: string }>
   created_by: string
+}
+
+export interface JdUpdateConstraintsRequest {
+  jd_id: string
+  current_weights: Record<string, unknown>
+  // Python's own internal shapes — forwarded as-is, not modeled here.
+  current_constraints: unknown[]
+  add_requests: unknown[]
+  org_id: string
+  user_id: string
+  ip_address: string
+}
+
+export interface JdUpdateConstraintsResponse {
+  success: boolean
+  jd_id: string
+  persisted: boolean
+  weights: JdWeightagePayload
+  updated_ids: string[]
+  added_ids: string[]
+  deleted_ids: string[]
+  failed: unknown[]
+  [key: string]: unknown
 }
 
 export interface JdAdjustWeightsRequest {
@@ -258,6 +281,25 @@ export const pythonClient = {
         return axiosError.response.data
       }
       logger.error('Python JD /adjust-weights failed', { error })
+      throw new AppError('Python service unavailable', 503)
+    }
+  },
+
+  async updateConstraints(body: JdUpdateConstraintsRequest): Promise<JdUpdateConstraintsResponse> {
+    try {
+      const response = await httpClient.post<JdUpdateConstraintsResponse>(
+        `${PYTHON_BASE}/api/jd/update-constraints`,
+        body
+      )
+      logger.info('Python JD /update-constraints called', { jdId: body.jd_id })
+      return response.data
+    } catch (error) {
+      const axiosError = error as { response?: { data?: JdUpdateConstraintsResponse } }
+      if (axiosError.response?.data) {
+        logger.warn('Python JD /update-constraints returned error response', { data: axiosError.response.data })
+        return axiosError.response.data
+      }
+      logger.error('Python JD /update-constraints failed', { error })
       throw new AppError('Python service unavailable', 503)
     }
   },

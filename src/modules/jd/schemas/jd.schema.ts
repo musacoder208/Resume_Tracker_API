@@ -42,9 +42,14 @@ export const jdByIdSchema = z.object({
   jd_id: z.coerce.number().int().positive('jd_id must be a positive integer'),
 })
 
+export const additionalNoteSchema = z.object({
+  id: z.string(),
+  instruction: z.string(),
+})
+
 export const generateWeightageSchema = z.object({
   jd_id: z.number().int().positive('jd_id must be a positive integer'),
-  additional_notes: z.string().optional().default(''),
+  additional_notes: z.array(additionalNoteSchema).optional().default([]),
 })
 
 export const updateWeightageSchema = z.object({
@@ -85,9 +90,20 @@ export const updateWeightageConstraintsSchema = z.object({
   constraints: z.array(z.unknown()).min(1, 'constraints must be a non-empty array'),
 })
 
+export const updateConstraintsSchema = z.object({
+  // jd_id arrives as a string from the UI for this endpoint (unlike the rest of the JD API) — coerce to number.
+  jd_id:                z.coerce.number().int().positive('jd_id must be a positive integer'),
+  // current_weights/current_constraints/add_requests are Python's own internal shapes and are
+  // just forwarded as-is — Node does not validate their contents, only that they're the right container type.
+  current_weights:      z.record(z.unknown()).default({}),
+  current_constraints:  z.array(z.unknown()).default([]),
+  add_requests:         z.array(z.unknown()).default([]),
+})
+
 export type AnswerJdDto = z.infer<typeof answerJdSchema>
 export type GetAllJdsDto = z.infer<typeof getAllJdsSchema>
 export type JdByIdDto = z.infer<typeof jdByIdSchema>
+export type AdditionalNoteDto = z.infer<typeof additionalNoteSchema>
 export type GenerateWeightageDto = z.infer<typeof generateWeightageSchema>
 export type UpdateWeightageDto = z.infer<typeof updateWeightageSchema>
 export type UpdateTheoryDto = z.infer<typeof updateTheorySchema>
@@ -95,3 +111,4 @@ export type EditQaDto = z.infer<typeof editQaSchema>
 export type UpdateQaDto = z.infer<typeof updateQaSchema>
 export type PublishJdDto = z.infer<typeof publishJdSchema>
 export type UpdateWeightageConstraintsDto = z.infer<typeof updateWeightageConstraintsSchema>
+export type UpdateConstraintsDto = z.infer<typeof updateConstraintsSchema>

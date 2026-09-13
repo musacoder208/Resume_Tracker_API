@@ -188,7 +188,7 @@ export const jdController = {
 
       const data = await jdService.generateWeightage({
         jdId: jd_id,
-        additionalNotes: additional_notes ?? '',
+        additionalNotes: additional_notes ?? [],
         companyId,
         userId,
       })
@@ -340,6 +340,41 @@ export const jdController = {
     }
   },
 
+  async updateConstraints(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { jd_id, current_weights, current_constraints, add_requests } = req.body
+      const companyId = req.tenantId!
+      const userId = req.userId!
+
+      const data = await jdService.updateConstraints({
+        jdId: jd_id,
+        currentWeights: current_weights ?? {},
+        currentConstraints: current_constraints ?? [],
+        addRequests: add_requests ?? [],
+        orgId: companyId,
+        userId,
+        ipAddress: req.ip ?? '',
+      })
+
+      if (!data.success) {
+        res.status(200).json({
+          success: false,
+          message: (data as Record<string, unknown> & { error?: { message?: string } }).error?.message ?? 'Failed to update JD constraints',
+          data,
+        })
+        return
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'JD constraints updated successfully',
+        data,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async publishJd(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const { jd_id } = req.body
@@ -414,6 +449,24 @@ export const jdController = {
       sendSuccess(res, {
         code: 'JD_DROPDOWN_FETCHED',
         message: 'JD dropdown fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getConstraintDetails(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const list = await jdService.getConstraintDetails()
+
+      sendSuccess(res, {
+        code: 'CONSTRAINT_DETAILS_FETCHED',
+        message: 'Constraint details fetched successfully',
         data: list,
         requestId: req.traceId,
       })

@@ -231,7 +231,7 @@ export const jdService = {
 
   async generateWeightage(params: {
     jdId: number
-    additionalNotes: string
+    additionalNotes: Array<{ id: string; instruction: string }>
     companyId: number
     userId: number
   }) {
@@ -337,6 +337,59 @@ export const jdService = {
     logger.info('JD weightage updated', { jdId: params.jdId, weightageId })
     return {
       ...adjustResponse,
+      jd_id: params.jdId,
+      weightageId,
+    }
+  },
+
+  async updateConstraints(params: {
+    jdId: number
+    currentWeights: Record<string, unknown>
+    currentConstraints: unknown[]
+    addRequests: unknown[]
+    orgId: number
+    userId: number
+    ipAddress: string
+  }) {
+    const response = await pythonClient.updateConstraints({
+      jd_id: String(params.jdId),
+      current_weights: params.currentWeights,
+      current_constraints: params.currentConstraints,
+      add_requests: params.addRequests,
+      org_id: String(params.orgId),
+      user_id: String(params.userId),
+      ip_address: params.ipAddress,
+    })
+
+    if (!response.success) {
+      logger.warn('Python update-constraints returned error — skipping DB save', { jdId: params.jdId })
+      return { ...response, jd_id: params.jdId }
+    }
+
+    if (response.failed?.length) {
+      logger.warn('Python update-constraints reported partial failures', { jdId: params.jdId, failed: response.failed })
+    }
+
+    const capabilitiesArray = Object.entries(response.weights?.capabilities ?? {}).map(
+      ([key, val]) => ({
+        capability: key,
+        weight: val.weight,
+        required: val.required ?? [],
+        optional: val.optional ?? [],
+        description: val.description ?? '',
+      })
+    )
+
+    const weightageId = await jdRepository.addUpdateJdWeightage({
+      jdId: params.jdId,
+      weightageJson: { ...response, weights: response.weights } as unknown as Record<string, unknown>,
+      capabilities: capabilitiesArray,
+      userId: params.userId,
+    })
+
+    logger.info('JD constraints updated via Python', { jdId: params.jdId, weightageId })
+    return {
+      ...response,
       jd_id: params.jdId,
       weightageId,
     }
@@ -545,6 +598,21 @@ export const jdService = {
   async getJDDropdown(): Promise<Array<{ jd_id: number; label: string }>> {
     const list = await jdRepository.getJDDropdown()
     logger.info('JD dropdown fetched', { count: list.length })
+    return list
+  },
+
+  async getConstraintDetails(): Promise<Array<{
+    id: number
+    categoryId: number
+    categoryName: string
+    name: string
+    controls: string | null
+    values: string[] | null
+    type: string | null
+    isSelected: boolean
+  }>> {
+    const list = await jdRepository.getConstraintDetails()
+    logger.info('Constraint details fetched', { count: list.length })
     return list
   },
 }
