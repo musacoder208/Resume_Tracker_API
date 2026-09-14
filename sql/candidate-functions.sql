@@ -504,11 +504,12 @@ BEGIN
     'score', CASE
       WHEN v_score.score_id IS NULL THEN NULL
       ELSE jsonb_build_object(
-        'score_id',        v_score.score_id,
-        'base_score',      v_score.base_score,
-        'final_score',     v_score.final_score,
-        'verdict',         v_score.verdict,
-        'group_breakdown', COALESCE(v_group_breakdown, '[]'::JSONB)
+        'score_id',          v_score.score_id,
+        'base_score',        v_score.base_score,
+        'final_score',       v_score.final_score,
+        'verdict',           v_score.verdict,
+        'group_breakdown',   COALESCE(v_group_breakdown, '[]'::JSONB),
+        'constraint_effects', COALESCE(v_score.score_json -> 'constraint_effects', '[]'::JSONB)
       )
     END,
     'meta', jsonb_build_object(

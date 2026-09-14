@@ -15,20 +15,17 @@ const consoleTransport = new transports.Console({
   ),
 });
 
-const fileTransports =
-  env.NODE_ENV === 'production'
-    ? [
-        new transports.File({
-          filename: 'logs/error.log',
-          level: 'error',
-          format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), logFormat),
-        }),
-        new transports.File({
-          filename: 'logs/combined.log',
-          format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), logFormat),
-        }),
-      ]
-    : [];
+const fileTransports = [
+  new transports.File({
+    filename: 'logs/error.log',
+    level: 'error',
+    format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), logFormat),
+  }),
+  new transports.File({
+    filename: 'logs/combined.log',
+    format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), logFormat),
+  }),
+];
 
 export const logger = createLogger({
   level: env.LOG_LEVEL,
