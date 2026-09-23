@@ -1,5 +1,7 @@
 import fs from 'fs'
 import path from 'path'
+import { promisify } from 'util'
+import * as libre from 'libreoffice-convert'
 import type { Response, NextFunction } from 'express'
 import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
@@ -7,6 +9,64 @@ import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
 import logger from '@shared/logger/logger'
 import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto } from './schemas/candidate.schema'
+
+// previewResume: pdf/jpg/jpeg/png render natively in the browser and are
+// streamed as-is; everything else (doc, docx, ...) is converted to PDF via
+// LibreOffice (requires the `soffice` binary installed and on PATH) so the
+// frontend <iframe> can render it inline instead of forcing a download.
+//
+// Each `soffice` invocation has a multi-second cold-start, so converted PDFs
+// are cached to disk (converted once, served instantly after) and conversion
+// is kicked off in the background right after upload so it's often already
+// done by the time the user clicks Preview.
+const libreConvertAsync = promisify(libre.convert)
+const PASSTHROUGH_MIME_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+}
+const PREVIEW_CACHE_DIR = path.join(process.cwd(), 'uploads', 'previewCache')
+
+// De-dupes concurrent conversion requests for the same file (background
+// pre-warm + an on-demand preview click racing each other) so only one
+// `soffice` process is spawned per file.
+const inFlightConversions = new Map<string, Promise<string>>()
+
+async function ensureConvertedPdf(filePath: string): Promise<string> {
+  const ext = path.extname(filePath)
+  const cachePath = path.join(PREVIEW_CACHE_DIR, `${path.basename(filePath, ext)}.pdf`)
+  if (fs.existsSync(cachePath)) return cachePath
+
+  const existing = inFlightConversions.get(filePath)
+  if (existing) return existing
+
+  const conversion = (async (): Promise<string> => {
+    fs.mkdirSync(PREVIEW_CACHE_DIR, { recursive: true })
+    const inputBuffer = fs.readFileSync(filePath)
+    const pdfBuffer = await libreConvertAsync(inputBuffer, '.pdf', undefined)
+    fs.writeFileSync(cachePath, pdfBuffer)
+    return cachePath
+  })()
+
+  inFlightConversions.set(filePath, conversion)
+  try {
+    return await conversion
+  } finally {
+    inFlightConversions.delete(filePath)
+  }
+}
+
+// Fire-and-forget: pre-warm the PDF preview cache for non-passthrough resumes
+// right after upload, so the first preview click usually just hits the cache.
+function warmResumePreviewCache(files: Express.Multer.File[]): void {
+  for (const file of files) {
+    const ext = path.extname(file.originalname).toLowerCase()
+    if (PASSTHROUGH_MIME_TYPES[ext]) continue
+    ensureConvertedPdf(file.path)
+      .catch((err) => logger.warn('Preview cache pre-warm failed', { file: file.originalname, err }))
+  }
+}
 
 export const candidateController = {
   async uploadResumes(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
@@ -26,6 +86,8 @@ export const candidateController = {
       if (!files || files.length === 0) {
         throw new AppError('No files uploaded', 400)
       }
+
+      warmResumePreviewCache(files)
 
       const result = await candidateService.uploadResumes(files, positionTitle.trim(), orgId, userId)
 
@@ -56,6 +118,8 @@ export const candidateController = {
 
       const files = req.files as Express.Multer.File[] | undefined
       if (!files || files.length === 0) throw new AppError('No files uploaded', 400)
+
+      warmResumePreviewCache(files)
 
       // Fire and forget — Python handles extraction + saving in background
       candidateService.uploadResumesStream(files, positionTitle.trim(), jdId, orgId, userId)
@@ -109,6 +173,8 @@ export const candidateController = {
       if (!files || files.length === 0) {
         throw new AppError('No files uploaded', 400)
       }
+
+      warmResumePreviewCache(files)
 
       const result = await candidateService.selectCandidateFiles(files, positionTitle.trim(), orgId, userId)
 
@@ -378,6 +444,42 @@ export const candidateController = {
     }
   },
 
+  // Original implementation — kept for reference/rollback. Replaced because
+  // it forced a download (`attachment`) for anything that wasn't already a
+  // PDF, and browsers can't render doc/docx bytes inline even if it hadn't.
+  //
+  // async previewResume(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+  //   try {
+  //     const userId = req.userId
+  //     if (!userId) throw new AppError('Unauthorized', 401)
+  //
+  //     const candidateId = parseInt(req.params.id as string, 10)
+  //     if (isNaN(candidateId) || candidateId <= 0) throw new AppError('Invalid candidate ID', 400)
+  //
+  //     const { filePath, fileName } = await candidateService.getResumeFilePath(candidateId)
+  //
+  //     if (!fs.existsSync(filePath)) throw new AppError('Resume file not found on server', 404)
+  //
+  //     const ext = path.extname(fileName).toLowerCase()
+  //     const mimeTypes: Record<string, string> = {
+  //       '.pdf':  'application/pdf',
+  //       '.doc':  'application/msword',
+  //       '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  //     }
+  //     const mimeType = mimeTypes[ext] ?? 'application/octet-stream'
+  //     const disposition = ext === '.pdf' ? 'inline' : 'attachment'
+  //
+  //     res.setHeader('Content-Type', mimeType)
+  //     res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`)
+  //
+  //     logger.info('Resume preview requested', { candidateId, fileName, disposition })
+  //
+  //     fs.createReadStream(filePath).pipe(res)
+  //   } catch (error) {
+  //     next(error)
+  //   }
+  // },
+
   async previewResume(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.userId
@@ -391,21 +493,31 @@ export const candidateController = {
       if (!fs.existsSync(filePath)) throw new AppError('Resume file not found on server', 404)
 
       const ext = path.extname(fileName).toLowerCase()
-      const mimeTypes: Record<string, string> = {
-        '.pdf':  'application/pdf',
-        '.doc':  'application/msword',
-        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+
+      // pdf/jpg/jpeg/png render natively in the browser — no conversion needed.
+      if (PASSTHROUGH_MIME_TYPES[ext]) {
+        res.setHeader('Content-Type', PASSTHROUGH_MIME_TYPES[ext])
+        res.setHeader('Content-Disposition', `inline; filename="${fileName}"`)
+
+        logger.info('Resume preview requested', { candidateId, fileName, disposition: 'inline', converted: false })
+
+        fs.createReadStream(filePath).pipe(res)
+        return
       }
-      const mimeType = mimeTypes[ext] ?? 'application/octet-stream'
-      const disposition = ext === '.pdf' ? 'inline' : 'attachment'
 
-      res.setHeader('Content-Type', mimeType)
-      res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`)
+      // Anything else (doc, docx, ...) — convert to PDF via LibreOffice so it
+      // can render inline instead of forcing a download. Cached after the
+      // first conversion; pre-warmed in the background right after upload.
+      const cachePath = await ensureConvertedPdf(filePath)
 
-      logger.info('Resume preview requested', { candidateId, fileName, disposition })
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `inline; filename="${path.basename(fileName, ext)}.pdf"`)
 
-      fs.createReadStream(filePath).pipe(res)
+      logger.info('Resume preview requested', { candidateId, fileName, disposition: 'inline', converted: true })
+
+      fs.createReadStream(cachePath).pipe(res)
     } catch (error) {
+      logger.error('previewResume failed', { error })
       next(error)
     }
   },
