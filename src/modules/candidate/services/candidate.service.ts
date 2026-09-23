@@ -339,6 +339,8 @@ export const candidateService = {
     statusId?: number
     hrStatusCode?: string
     gender?: string
+    roundId?: number
+    actionId?: number
     page: number
     pageSize: number
   }): Promise<{

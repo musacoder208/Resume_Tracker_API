@@ -48,6 +48,8 @@ export const getCandidateListSchema = z.object({
   status_id:         z.coerce.number().int().positive().optional(),
   hr_status_code:    z.string().optional(),
   gender:            z.string().optional(),
+  round_id:          z.coerce.number().int().positive().optional(),
+  action_id:         z.coerce.number().int().positive().optional(),
   page:              z.coerce.number().int().positive().default(1),
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })
