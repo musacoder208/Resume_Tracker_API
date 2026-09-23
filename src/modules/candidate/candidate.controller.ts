@@ -482,9 +482,6 @@ export const candidateController = {
 
   async previewResume(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.userId
-      if (!userId) throw new AppError('Unauthorized', 401)
-
       const candidateId = parseInt(req.params.id as string, 10)
       if (isNaN(candidateId) || candidateId <= 0) throw new AppError('Invalid candidate ID', 400)
 
