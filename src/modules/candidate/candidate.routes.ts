@@ -18,6 +18,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage })
 
 const router = Router()
+
+// No auth — must stay above router.use(authMiddleware) so it's reachable
+// without a valid accessToken (e.g. long-lived preview links, iframe embeds).
+router.get('/previewResume/:id', candidateController.previewResume)
+
 router.use(authMiddleware)
 
 router.post('/uploadResumes', upload.array('files'), candidateController.uploadResumes)
@@ -27,7 +32,6 @@ router.post('/selectCandidateFiles', upload.array('files'), candidateController.
 router.post('/saveCandidates', validate(saveCandidatesSchema), candidateController.saveCandidates)
 router.get('/getCandidateList', validateQuery(getCandidateListSchema), candidateController.getCandidateList)
 router.get('/getCandidateDetails/:id', candidateController.getCandidateDetailsById)
-router.get('/previewResume/:id', candidateController.previewResume)
 router.get('/getFeedbackTypes', candidateController.getFeedbackTypes)
 router.get('/getHRQuestions', candidateController.getHRQuestions)
 router.put('/updateCandidateDetails', validate(updateCandidateDetailsSchema), candidateController.updateCandidateDetails)
