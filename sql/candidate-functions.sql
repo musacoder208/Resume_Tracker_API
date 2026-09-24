@@ -735,26 +735,13 @@ BEGIN
 END;
 $$;
 
+-- DROP FUNCTION mechsoft.fn_get_candidate_list(int8, text, text, text, int8, int8, int8, text, text);
 
--- ------------------------------------------------------------
--- fn_get_candidate_list
---    Returns a JSONB object with:
---      summary     - landing page stats (scoped to p_jd_id)
---      total_count - total matching records (for pagination)
---      candidates  - current page records only
--- ------------------------------------------------------------
-CREATE OR REPLACE FUNCTION mechsoft.fn_get_candidate_list(
-  p_jd_id            BIGINT  DEFAULT NULL,
-  p_search_text      TEXT    DEFAULT NULL,
-  p_verdict          TEXT    DEFAULT NULL,
-  p_experience_range TEXT    DEFAULT NULL,
-  p_page             BIGINT  DEFAULT 1,
-  p_page_size        BIGINT  DEFAULT 10,
-  p_status_id        BIGINT  DEFAULT NULL
-)
-RETURNS JSONB
-LANGUAGE plpgsql
-AS $$
+CREATE OR REPLACE FUNCTION mechsoft.fn_get_candidate_list(p_jd_id bigint DEFAULT NULL::bigint, p_search_text text DEFAULT NULL::text, p_verdict text DEFAULT NULL::text, p_experience_range text DEFAULT NULL::text, p_page bigint DEFAULT 1, p_page_size bigint DEFAULT 10, p_status_id bigint DEFAULT NULL::bigint, p_hr_status_code text DEFAULT NULL::text, p_gender text DEFAULT NULL::text, p_round_id bigint DEFAULT NULL::bigint, p_action_id bigint DEFAULT NULL::bigint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+
 DECLARE
   v_candidates  JSONB;
   v_summary     JSONB;
@@ -774,6 +761,21 @@ BEGIN
     WHERE  is_deleted = FALSE
     ORDER  BY candidate_id, created_date DESC
   ) sc ON sc.candidate_id = ch.candidate_id
+
+   -- NEW JOIN: get each candidate's latest HR status (from hr_answers -> hr_question_options)
+  LEFT JOIN (
+    SELECT DISTINCT ON (ha.candidate_id)
+           ha.candidate_id,
+           o.parent_status_code
+    FROM   mechsoft.tbl_candidate_hr_answers ha
+    INNER JOIN mechsoft.tbl_hr_question_options o
+           ON o.question_key = ha.question_key
+          AND o.option_value = ha.answer_text
+    WHERE  ha.question_key = 'interview_update'
+    ORDER  BY ha.candidate_id, ha.created_date DESC
+  ) hr ON hr.candidate_id = ch.candidate_id
+  -- END NEW JOIN
+  
   WHERE ch.is_deleted    = FALSE
     AND ch.upload_status = 'complete'
     AND (p_jd_id     IS NULL OR ch.jd_id     = p_jd_id)
@@ -794,7 +796,18 @@ BEGIN
         WHEN '8+'  THEN ch.total_experience >= 8
         ELSE TRUE
       END
-    );
+    )
+	 AND (p_hr_status_code IS NULL OR hr.parent_status_code = p_hr_status_code)
+	 AND (p_gender IS NULL OR ch.gender ILIKE p_gender)   -- NEW: gender filter
+	 AND (
+	   (p_round_id IS NULL AND p_action_id IS NULL)
+	   OR EXISTS (
+	     SELECT 1 FROM mechsoft.trans_candidateinterviewdetails t
+	     WHERE t.candidate_id = ch.candidate_id
+	       AND (p_round_id  IS NULL OR t.round_id  = p_round_id)
+	       AND (p_action_id IS NULL OR t.action_id = p_action_id)
+	   )
+	 );  -- NEW: round + round-status (action) filter
 
   -- ── 2. Paginated candidate list ───────────────────────────────
   SELECT jsonb_agg(row)
@@ -805,6 +818,7 @@ BEGIN
       'jd_id',             ch.jd_id,
       'full_name',         ch.full_name,
       'email',             ch.email,
+	  'gender',            ch.gender,          -- NEW: expose gender in payload
       'phone',             ch.phone,
       'location',          ch.location,
       'current_job_title', ch.current_job_title,
@@ -813,9 +827,15 @@ BEGIN
       'technical_skills',  COALESCE(sk.technical_skills, '[]'::JSONB),
       'degree',            ed.degree,
       'final_score',       sc.final_score,
-      'verdict',           sc.verdict
+      'verdict',           sc.verdict,
+	  'hr_status_code',    hr.parent_status_code,
+	  'hr_status_label',   hr.hr_status_label,
+	  'status_code',       ms.status_code,       -- NEW: candidate master status (mst_status)
+	  'status_name',       ms.status_name        -- NEW: candidate master status (mst_status)
     ) AS row
     FROM mechsoft.tbl_candidates_header ch
+
+    LEFT JOIN public.mst_status ms ON ms.status_id = ch.status_id  -- NEW: candidate master status
 
     LEFT JOIN (
       SELECT   candidate_id,
@@ -842,6 +862,21 @@ BEGIN
       ORDER  BY candidate_id, created_date DESC
     ) sc ON sc.candidate_id = ch.candidate_id
 
+ -- NEW JOIN: same HR status join as in count query above
+    LEFT JOIN (
+      SELECT DISTINCT ON (ha.candidate_id)
+             ha.candidate_id,
+             o.parent_status_code,
+             o.option_label AS hr_status_label
+      FROM   mechsoft.tbl_candidate_hr_answers ha
+      INNER JOIN mechsoft.tbl_hr_question_options o
+             ON o.question_key = ha.question_key
+            AND o.option_value = ha.answer_text
+      WHERE  ha.question_key = 'interview_update'
+      ORDER  BY ha.candidate_id, ha.created_date DESC
+    ) hr ON hr.candidate_id = ch.candidate_id
+    -- END NEW JOIN
+	
     WHERE ch.is_deleted    = FALSE
       AND ch.upload_status = 'complete'
       AND (p_jd_id     IS NULL OR ch.jd_id     = p_jd_id)
@@ -863,7 +898,20 @@ BEGIN
           ELSE TRUE
         END
       )
-    ORDER BY ch.candidate_id DESC
+	   AND (p_hr_status_code IS NULL OR hr.parent_status_code = p_hr_status_code)
+	   AND (p_gender IS NULL OR ch.gender ILIKE p_gender)   -- NEW: gender filter
+	   AND (
+	     (p_round_id IS NULL AND p_action_id IS NULL)
+	     OR EXISTS (
+	       SELECT 1 FROM mechsoft.trans_candidateinterviewdetails t
+	       WHERE t.candidate_id = ch.candidate_id
+	         AND (p_round_id  IS NULL OR t.round_id  = p_round_id)
+	         AND (p_action_id IS NULL OR t.action_id = p_action_id)
+	     )
+	   )  -- NEW: round + round-status (action) filter
+   ORDER BY
+      CASE WHEN hr.parent_status_code = 'PENDING' THEN 0 ELSE 1 END,  -- NEW: Pending shown first
+      ch.candidate_id DESC
     LIMIT  p_page_size
     OFFSET v_offset
   ) subq;
@@ -883,6 +931,7 @@ BEGIN
                          )
   )
   INTO v_summary
+  
   FROM mechsoft.tbl_candidates_header ch
   LEFT JOIN (
     SELECT DISTINCT ON (candidate_id)
@@ -902,7 +951,9 @@ BEGIN
   );
 
 END;
-$$;
+$function$
+;
+
 
 
 -- ------------------------------------------------------------

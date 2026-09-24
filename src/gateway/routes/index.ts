@@ -5,6 +5,7 @@ import { commonAdapter } from '@gateway/adapters/common.adapter'
 import { companyProfileAdapter } from '@gateway/adapters/companyProfile.adapter'
 import { jdAdapter } from '@gateway/adapters/jd.adapter'
 import { candidateAdapter } from '@gateway/adapters/candidate.adapter'
+import { interviewProcessAdapter } from '@gateway/adapters/interviewProcess.adapter'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { pool } from '@shared/config/db'
 import { sendSuccess } from '@shared/utils/response'
@@ -21,6 +22,7 @@ router.use('/common', commonAdapter)
 router.use('/companyProfile', companyProfileAdapter)
 router.use('/jd', jdAdapter)
 router.use('/candidate', candidateAdapter)
+router.use('/interview-process', interviewProcessAdapter)
 
 router.get('/dashboard/overview', authMiddleware, async (req: RequestWithUser, res, next) => {
   try {
