@@ -382,4 +382,78 @@ export const candidateService = {
     logger.info('Candidate scores updated', { jdId, totalScored: scoreResponse.totalScored })
     return { totalScored: scoreResponse.totalScored }
   },
+
+  async getActivityList(activityType: string): Promise<Record<string, unknown>[]> {
+    const list = await candidateRepository.getActivityList(activityType)
+    logger.info('Activity list fetched', { activityType, count: list.length })
+    return list
+  },
+
+  async getSubActivityList(activityId: number): Promise<Record<string, unknown>[]> {
+    const list = await candidateRepository.getSubActivityList(activityId)
+    logger.info('Sub-activity list fetched', { activityId, count: list.length })
+    return list
+  },
+
+  async getAlertList(): Promise<Array<{ alert_id: number; alert_name: string }>> {
+    const list = await candidateRepository.getAlertList()
+    logger.info('Alert list fetched', { count: list.length })
+    return list
+  },
+
+  async saveCandidateActivity(params: {
+    orgId: number | null
+    candidateId: number
+    activityId: number
+    subActivityId?: number
+    notes?: string
+    startDate?: string
+    createdBy: number
+    candidateActivityId?: number
+    isHighlighted?: boolean
+    alertId?: number
+  }): Promise<{ candidateActivityId: number }> {
+    const result = await candidateRepository.saveCandidateActivity({
+      orgId:               params.orgId,
+      candidateId:         params.candidateId,
+      activityId:          params.activityId,
+      subActivityId:       params.subActivityId ?? null,
+      notes:               params.notes ?? null,
+      startDate:           params.startDate ?? null,
+      createdBy:           params.createdBy,
+      candidateActivityId: params.candidateActivityId ?? null,
+      isHighlighted:       params.isHighlighted ?? null,
+      alertId:             params.alertId ?? null,
+    })
+
+    if (!result.success) {
+      throw new AppError(result.message || 'Failed to save candidate activity', 400)
+    }
+
+    logger.info('Candidate activity saved', { candidateId: params.candidateId, activityId: params.activityId, candidateActivityId: result.candidateActivityId })
+    return { candidateActivityId: result.candidateActivityId as number }
+  },
+
+  async getCandidateActivity(
+    orgId: number | null,
+    candidateId: number,
+    page: number,
+    pageSize: number
+  ): Promise<{ totalCount: number; activities: Record<string, unknown>[]; totalPages: number }> {
+    const data = await candidateRepository.getCandidateActivity(orgId, candidateId, page, pageSize)
+    const totalPages = Math.ceil(data.totalCount / pageSize)
+    logger.info('Candidate activity fetched', { candidateId, page, pageSize, count: data.activities.length, totalCount: data.totalCount })
+    return { ...data, totalPages }
+  },
+
+  async saveCandidateActivityHighlight(candidateActivityId: number): Promise<{ isHighlighted: boolean }> {
+    const result = await candidateRepository.saveCandidateActivityHighlight(candidateActivityId)
+
+    if (!result.success) {
+      throw new AppError(result.message || 'Failed to update highlight', 404)
+    }
+
+    logger.info('Candidate activity highlight toggled', { candidateActivityId, isHighlighted: result.isHighlighted })
+    return { isHighlighted: result.isHighlighted as boolean }
+  },
 }

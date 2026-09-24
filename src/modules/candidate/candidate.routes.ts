@@ -3,7 +3,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { validate, validateQuery } from '@shared/validators/validate'
-import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema } from './schemas/candidate.schema'
+import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema, getActivityListSchema, getSubActivityListSchema, saveCandidateActivitySchema, getCandidateActivitySchema, saveCandidateActivityHighlightSchema } from './schemas/candidate.schema'
 import { candidateController } from './candidate.controller'
 
 const storage = multer.diskStorage({
@@ -40,5 +40,11 @@ router.get('/getHRAnswers', candidateController.getHRAnswers)
 router.post('/saveHRFeedback', validate(saveHRFeedbackSchema), candidateController.saveHRFeedback)
 router.post('/saveCandidateFeedback', validate(saveCandidateFeedbackSchema), candidateController.saveCandidateFeedback)
 router.post('/updateCandidateScore', validate(updateCandidateScoreSchema), candidateController.updateCandidateScore)
+router.get('/getActivityList', validateQuery(getActivityListSchema), candidateController.getActivityList)
+router.get('/getAlertList', candidateController.getAlertList)
+router.get('/getSubActivityList', validateQuery(getSubActivityListSchema), candidateController.getSubActivityList)
+router.post('/saveCandidateActivity', validate(saveCandidateActivitySchema), candidateController.saveCandidateActivity)
+router.get('/getCandidateActivity', validateQuery(getCandidateActivitySchema), candidateController.getCandidateActivity)
+router.post('/saveCandidateActivityHighlight', validate(saveCandidateActivityHighlightSchema), candidateController.saveCandidateActivityHighlight)
 
 export default router

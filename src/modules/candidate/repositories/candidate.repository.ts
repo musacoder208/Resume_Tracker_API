@@ -382,4 +382,139 @@ export const candidateRepository = {
       throw new AppError('Database error', 500)
     }
   },
+
+  async getActivityList(activityType: string): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_activity_list($1) AS data',
+        [activityType]
+      )
+      const data = result.rows[0]?.data
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      logger.error('DB error in getActivityList', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getSubActivityList(activityId: number): Promise<Record<string, unknown>[]> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_sub_activity_list($1) AS data',
+        [activityId]
+      )
+      const data = result.rows[0]?.data
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      logger.error('DB error in getSubActivityList', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async saveCandidateActivity(params: {
+    orgId: number | null
+    candidateId: number
+    activityId: number
+    subActivityId: number | null
+    notes: string | null
+    startDate: string | null
+    createdBy: number
+    candidateActivityId: number | null
+    isHighlighted: boolean | null
+    alertId: number | null
+  }): Promise<{ success: boolean; message: string; candidateActivityId?: number }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_save_candidate_activity($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS result',
+        [
+          params.orgId,
+          params.candidateId,
+          params.activityId,
+          params.subActivityId,
+          params.notes,
+          params.startDate,
+          params.createdBy,
+          params.candidateActivityId,
+          params.isHighlighted,
+          params.alertId,
+        ]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return {
+        success: data.success === true,
+        message: (data.message as string) ?? '',
+        candidateActivityId: data.candidate_activity_id as number | undefined,
+      }
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; hint?: string; code?: string }
+      logger.error('DB error in saveCandidateActivity', {
+        message: e.message,
+        detail: e.detail,
+        hint: e.hint,
+        code: e.code,
+      })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getAlertList(): Promise<Array<{ alert_id: number; alert_name: string }>> {
+    try {
+      const result = await pool.query(
+        `SELECT alert_id, alert_name
+         FROM   mechsoft.tbl_alert_master
+         WHERE  is_deleted = FALSE
+         ORDER  BY alert_id`
+      )
+      return result.rows
+    } catch (error) {
+      logger.error('DB error in getAlertList', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async saveCandidateActivityHighlight(candidateActivityId: number): Promise<{ success: boolean; message: string; isHighlighted?: boolean }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_save_candidate_activity_highlight($1) AS result',
+        [candidateActivityId]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return {
+        success: data.success === true,
+        message: (data.message as string) ?? '',
+        isHighlighted: data.is_highlighted as boolean | undefined,
+      }
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; hint?: string; code?: string }
+      logger.error('DB error in saveCandidateActivityHighlight', {
+        message: e.message,
+        detail: e.detail,
+        hint: e.hint,
+        code: e.code,
+      })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getCandidateActivity(
+    orgId: number | null,
+    candidateId: number,
+    page: number,
+    pageSize: number
+  ): Promise<{ totalCount: number; activities: Record<string, unknown>[] }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_candidate_activity($1, $2, $3, $4) AS result',
+        [orgId, candidateId, page, pageSize]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return {
+        totalCount: (data.total_count as number) ?? 0,
+        activities: Array.isArray(data.activities) ? (data.activities as Record<string, unknown>[]) : [],
+      }
+    } catch (error) {
+      logger.error('DB error in getCandidateActivity', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
 }

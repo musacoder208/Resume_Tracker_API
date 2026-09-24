@@ -52,10 +52,44 @@ export const getCandidateListSchema = z.object({
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })
 
-export type UpdateCandidateDetailsDto = z.infer<typeof updateCandidateDetailsSchema>
-export type SaveHRAnswersDto          = z.infer<typeof saveHRAnswersSchema>
-export type SaveCandidatesDto        = z.infer<typeof saveCandidatesSchema>
-export type UpdateCandidateScoreDto  = z.infer<typeof updateCandidateScoreSchema>
-export type SaveCandidateFeedbackDto = z.infer<typeof saveCandidateFeedbackSchema>
-export type SaveHRFeedbackDto        = z.infer<typeof saveHRFeedbackSchema>
-export type GetCandidateListDto      = z.infer<typeof getCandidateListSchema>
+export const getActivityListSchema = z.object({
+  activity_type: z.string().optional(),
+})
+
+export const getSubActivityListSchema = z.object({
+  activity_id: z.coerce.number().int().positive('activity_id is required'),
+})
+
+export const saveCandidateActivitySchema = z.object({
+  candidate_activity_id: z.number().int().positive().optional(),
+  candidate_id:           z.number().int().positive('candidate_id is required'),
+  activity_id:            z.number().int().positive('activity_id is required'),
+  sub_activity_id:        z.number().int().positive().optional(),
+  notes:                  z.string().optional(),
+  start_date:             z.string().optional(),
+  is_highlighted:         z.boolean().optional(),
+  alert_id:               z.number().int().positive().optional(),
+})
+
+export const getCandidateActivitySchema = z.object({
+  candidate_id: z.coerce.number().int().positive('candidate_id is required'),
+  page:         z.coerce.number().int().positive().default(1),
+  page_size:    z.coerce.number().int().positive().max(100).default(10),
+})
+
+export const saveCandidateActivityHighlightSchema = z.object({
+  candidate_activity_id: z.number().int().positive('candidate_activity_id is required'),
+})
+
+export type UpdateCandidateDetailsDto        = z.infer<typeof updateCandidateDetailsSchema>
+export type SaveHRAnswersDto                 = z.infer<typeof saveHRAnswersSchema>
+export type SaveCandidatesDto                = z.infer<typeof saveCandidatesSchema>
+export type UpdateCandidateScoreDto          = z.infer<typeof updateCandidateScoreSchema>
+export type SaveCandidateFeedbackDto         = z.infer<typeof saveCandidateFeedbackSchema>
+export type SaveHRFeedbackDto                = z.infer<typeof saveHRFeedbackSchema>
+export type GetCandidateListDto              = z.infer<typeof getCandidateListSchema>
+export type GetActivityListDto               = z.infer<typeof getActivityListSchema>
+export type GetSubActivityListDto            = z.infer<typeof getSubActivityListSchema>
+export type SaveCandidateActivityDto         = z.infer<typeof saveCandidateActivitySchema>
+export type GetCandidateActivityDto          = z.infer<typeof getCandidateActivitySchema>
+export type SaveCandidateActivityHighlightDto = z.infer<typeof saveCandidateActivityHighlightSchema>

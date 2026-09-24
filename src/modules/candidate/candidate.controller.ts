@@ -8,7 +8,7 @@ import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
 import logger from '@shared/logger/logger'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto } from './schemas/candidate.schema'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto } from './schemas/candidate.schema'
 
 // previewResume: pdf/jpg/jpeg/png render natively in the browser and are
 // streamed as-is; everything else (doc, docx, ...) is converted to PDF via
@@ -535,6 +535,147 @@ export const candidateController = {
         code: 'CANDIDATE_SCORES_UPDATED',
         message: 'Candidate scores updated successfully',
         data: { total_scored: result.totalScored },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getActivityList(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { activity_type } = req.query as unknown as GetActivityListDto
+
+      const list = await candidateService.getActivityList(activity_type ?? 'User')
+
+      sendSuccess(res, {
+        code: 'ACTIVITY_LIST_FETCHED',
+        message: 'Activity list fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getAlertList(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const list = await candidateService.getAlertList()
+
+      sendSuccess(res, {
+        code: 'ALERT_LIST_FETCHED',
+        message: 'Alert list fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getSubActivityList(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { activity_id } = req.query as unknown as GetSubActivityListDto
+
+      const list = await candidateService.getSubActivityList(activity_id)
+
+      sendSuccess(res, {
+        code: 'SUB_ACTIVITY_LIST_FETCHED',
+        message: 'Sub-activity list fetched successfully',
+        data: list,
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async saveCandidateActivity(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const orgId = req.tenantId ?? null
+
+      const { candidate_activity_id, candidate_id, activity_id, sub_activity_id, notes, start_date, is_highlighted, alert_id } = req.body as SaveCandidateActivityDto
+
+      const result = await candidateService.saveCandidateActivity({
+        orgId,
+        candidateId:         candidate_id,
+        activityId:          activity_id,
+        subActivityId:       sub_activity_id,
+        notes,
+        startDate:           start_date,
+        createdBy:           userId,
+        candidateActivityId: candidate_activity_id,
+        isHighlighted:       is_highlighted,
+        alertId:             alert_id,
+      })
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_ACTIVITY_SAVED',
+        message: 'Activity saved successfully',
+        data: { candidate_activity_id: result.candidateActivityId },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getCandidateActivity(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const orgId = req.tenantId ?? null
+
+      const { candidate_id, page, page_size } = req.query as unknown as GetCandidateActivityDto
+
+      const data = await candidateService.getCandidateActivity(orgId, candidate_id, page, page_size)
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_ACTIVITY_FETCHED',
+        message: 'Candidate activity fetched successfully',
+        data: {
+          activities: data.activities,
+          pagination: {
+            total_count: data.totalCount,
+            page,
+            page_size,
+            total_pages: data.totalPages,
+          },
+        },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async saveCandidateActivityHighlight(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const { candidate_activity_id } = req.body as SaveCandidateActivityHighlightDto
+
+      const result = await candidateService.saveCandidateActivityHighlight(candidate_activity_id)
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_ACTIVITY_HIGHLIGHT_UPDATED',
+        message: result.isHighlighted ? 'Activity highlighted' : 'Highlight removed',
+        data: { candidate_activity_id, is_highlighted: result.isHighlighted },
         requestId: req.traceId,
       })
     } catch (error) {
