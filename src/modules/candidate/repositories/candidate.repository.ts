@@ -512,12 +512,72 @@ export const candidateRepository = {
         [orgId, candidateId, page, pageSize]
       )
       const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      // The function only returns `message` from its EXCEPTION block
+      if (data.message) {
+        logger.error('fn_get_candidate_activity failed', { candidateId, message: data.message })
+        throw new AppError('Database error', 500)
+      }
       return {
         totalCount: (data.total_count as number) ?? 0,
         activities: Array.isArray(data.activities) ? (data.activities as Record<string, unknown>[]) : [],
       }
     } catch (error) {
       logger.error('DB error in getCandidateActivity', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getCallbackRequestList(params: {
+    orgId: number | null
+    userId: number | null
+    statusCode: string | null
+    startDate: string | null
+    page: number
+    pageSize: number
+  }): Promise<{ success: boolean; message: string; totalCount: number; totalPages: number; data: Record<string, unknown>[] }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_activity_callback_request_list($1, $2, $3::varchar, $4::date, $5, $6) AS result',
+        [params.orgId, params.userId, params.statusCode, params.startDate, params.page, params.pageSize]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return {
+        success: data.success === true,
+        message: (data.message as string) ?? '',
+        totalCount: Number(data.total_count ?? 0),
+        totalPages: Number(data.total_pages ?? 0),
+        data: Array.isArray(data.data) ? (data.data as Record<string, unknown>[]) : [],
+      }
+    } catch (error) {
+      logger.error('DB error in getCallbackRequestList', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async markCandidateActivityCompleted(
+    candidateActivityId: number,
+    userId: number,
+    orgId: number | null
+  ): Promise<{ success: boolean; message: string; candidateActivityId?: number }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_mark_candidate_activity_completed($1, $2, $3) AS result',
+        [candidateActivityId, userId, orgId]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return {
+        success: data.success === true,
+        message: (data.message as string) ?? '',
+        candidateActivityId: data.candidate_activity_id as number | undefined,
+      }
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; hint?: string; code?: string }
+      logger.error('DB error in markCandidateActivityCompleted', {
+        message: e.message,
+        detail: e.detail,
+        hint: e.hint,
+        code: e.code,
+      })
       throw new AppError('Database error', 500)
     }
   },

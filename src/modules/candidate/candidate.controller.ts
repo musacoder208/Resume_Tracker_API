@@ -8,7 +8,7 @@ import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
 import logger from '@shared/logger/logger'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto } from './schemas/candidate.schema'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto, GetCallbackRequestListDto, MarkCandidateActivityCompletedDto } from './schemas/candidate.schema'
 
 // previewResume: pdf/jpg/jpeg/png render natively in the browser and are
 // streamed as-is; everything else (doc, docx, ...) is converted to PDF via
@@ -678,6 +678,65 @@ export const candidateController = {
         code: 'CANDIDATE_ACTIVITY_HIGHLIGHT_UPDATED',
         message: result.isHighlighted ? 'Activity highlighted' : 'Highlight removed',
         data: { candidate_activity_id, is_highlighted: result.isHighlighted },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getCallbackRequestList(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const orgId = req.tenantId ?? null
+
+      const { status_code, start_date, page, page_size } = req.query as unknown as GetCallbackRequestListDto
+
+      const result = await candidateService.getCallbackRequestList({
+        orgId,
+        userId,
+        statusCode: status_code,
+        startDate:  start_date,
+        page,
+        pageSize:   page_size,
+      })
+
+      sendSuccess(res, {
+        code: 'CALLBACK_REQUEST_LIST_FETCHED',
+        message: 'Callback request list fetched successfully',
+        data: {
+          callbacks: result.data,
+          pagination: {
+            total_count: result.totalCount,
+            page,
+            page_size,
+            total_pages: result.totalPages,
+          },
+        },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async markCandidateActivityCompleted(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const orgId = req.tenantId ?? null
+
+      const { candidate_activity_id } = req.body as MarkCandidateActivityCompletedDto
+
+      const result = await candidateService.markCandidateActivityCompleted(candidate_activity_id, userId, orgId)
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_ACTIVITY_COMPLETED',
+        message: 'Activity marked as completed',
+        data: { candidate_activity_id: result.candidateActivityId },
         requestId: req.traceId,
       })
     } catch (error) {

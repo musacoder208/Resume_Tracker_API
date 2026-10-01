@@ -63,14 +63,14 @@ export const getSubActivityListSchema = z.object({
 })
 
 export const saveCandidateActivitySchema = z.object({
-  candidate_activity_id: z.number().int().positive().optional(),
+  candidate_activity_id: z.number().int().positive().nullish(),
   candidate_id:           z.number().int().positive('candidate_id is required'),
   activity_id:            z.number().int().positive('activity_id is required'),
-  sub_activity_id:        z.number().int().positive().optional(),
-  notes:                  z.string().optional(),
-  start_date:             z.string().optional(),
-  is_highlighted:         z.boolean().optional(),
-  alert_id:               z.number().int().positive().optional(),
+  sub_activity_id:        z.number().int().positive().nullish(),
+  notes:                  z.string().nullish(),
+  start_date:             z.string().nullish(),
+  is_highlighted:         z.boolean().nullish(),
+  alert_id:               z.number().int().positive().nullish(),
 })
 
 export const getCandidateActivitySchema = z.object({
@@ -80,6 +80,17 @@ export const getCandidateActivitySchema = z.object({
 })
 
 export const saveCandidateActivityHighlightSchema = z.object({
+  candidate_activity_id: z.number().int().positive('candidate_activity_id is required'),
+})
+
+export const getCallbackRequestListSchema = z.object({
+  status_code: z.string().trim().toUpperCase().optional(),
+  start_date:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'start_date must be YYYY-MM-DD').optional(),
+  page:        z.coerce.number().int().positive().default(1),
+  page_size:   z.coerce.number().int().positive().max(100).default(10),
+})
+
+export const markCandidateActivityCompletedSchema = z.object({
   candidate_activity_id: z.number().int().positive('candidate_activity_id is required'),
 })
 
@@ -95,3 +106,5 @@ export type GetSubActivityListDto            = z.infer<typeof getSubActivityList
 export type SaveCandidateActivityDto         = z.infer<typeof saveCandidateActivitySchema>
 export type GetCandidateActivityDto          = z.infer<typeof getCandidateActivitySchema>
 export type SaveCandidateActivityHighlightDto = z.infer<typeof saveCandidateActivityHighlightSchema>
+export type GetCallbackRequestListDto        = z.infer<typeof getCallbackRequestListSchema>
+export type MarkCandidateActivityCompletedDto = z.infer<typeof markCandidateActivityCompletedSchema>

@@ -407,13 +407,13 @@ export const candidateService = {
     orgId: number | null
     candidateId: number
     activityId: number
-    subActivityId?: number
-    notes?: string
-    startDate?: string
+    subActivityId?: number | null
+    notes?: string | null
+    startDate?: string | null
     createdBy: number
-    candidateActivityId?: number
-    isHighlighted?: boolean
-    alertId?: number
+    candidateActivityId?: number | null
+    isHighlighted?: boolean | null
+    alertId?: number | null
   }): Promise<{ candidateActivityId: number }> {
     const result = await candidateRepository.saveCandidateActivity({
       orgId:               params.orgId,
@@ -457,5 +457,46 @@ export const candidateService = {
 
     logger.info('Candidate activity highlight toggled', { candidateActivityId, isHighlighted: result.isHighlighted })
     return { isHighlighted: result.isHighlighted as boolean }
+  },
+
+  async getCallbackRequestList(params: {
+    orgId: number | null
+    userId: number
+    statusCode?: string
+    startDate?: string
+    page: number
+    pageSize: number
+  }): Promise<{ totalCount: number; totalPages: number; data: Record<string, unknown>[] }> {
+    const result = await candidateRepository.getCallbackRequestList({
+      orgId:      params.orgId,
+      userId:     params.userId,
+      statusCode: params.statusCode || null,
+      startDate:  params.startDate || null,
+      page:       params.page,
+      pageSize:   params.pageSize,
+    })
+
+    if (!result.success) {
+      throw new AppError(result.message || 'Failed to fetch callback request list', 400)
+    }
+
+    logger.info('Callback request list fetched', { ...params, count: result.data.length, totalCount: result.totalCount })
+    return { totalCount: result.totalCount, totalPages: result.totalPages, data: result.data }
+  },
+
+  async markCandidateActivityCompleted(
+    candidateActivityId: number,
+    userId: number,
+    orgId: number | null
+  ): Promise<{ candidateActivityId: number }> {
+    const result = await candidateRepository.markCandidateActivityCompleted(candidateActivityId, userId, orgId)
+
+    if (!result.success) {
+      const status = result.message === 'Candidate activity not found' ? 404 : 400
+      throw new AppError(result.message || 'Failed to mark activity as completed', status)
+    }
+
+    logger.info('Candidate activity marked completed', { candidateActivityId, userId })
+    return { candidateActivityId: result.candidateActivityId as number }
   },
 }
