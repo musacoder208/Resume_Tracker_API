@@ -50,6 +50,7 @@ export const getCandidateListSchema = z.object({
   gender:            z.string().optional(),
   round_id:          z.coerce.number().int().positive().optional(),
   action_id:         z.coerce.number().int().positive().optional(),
+  sub_activity_code: z.string().trim().toUpperCase().optional(),
   page:              z.coerce.number().int().positive().default(1),
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })
@@ -65,8 +66,8 @@ export const getSubActivityListSchema = z.object({
 export const saveCandidateActivitySchema = z.object({
   candidate_activity_id: z.number().int().positive().nullish(),
   candidate_id:           z.number().int().positive('candidate_id is required'),
-  activity_id:            z.number().int().positive('activity_id is required'),
-  sub_activity_id:        z.number().int().positive().nullish(),
+  activity_code:          z.string().trim().min(1, 'activity_code is required').toUpperCase(),
+  sub_activity_code:      z.string().trim().toUpperCase().nullish(),
   notes:                  z.string().nullish(),
   start_date:             z.string().nullish(),
   is_highlighted:         z.boolean().nullish(),

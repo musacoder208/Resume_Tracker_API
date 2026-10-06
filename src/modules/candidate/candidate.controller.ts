@@ -314,7 +314,7 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
-      const { jd_id, search_text, verdict, experience_range, status_id, hr_status_code, gender, round_id, action_id, page, page_size } = req.query as unknown as GetCandidateListDto
+      const { jd_id, search_text, verdict, experience_range, status_id, hr_status_code, gender, round_id, action_id, sub_activity_code, page, page_size } = req.query as unknown as GetCandidateListDto
 
       const { summary, candidates, totalCount, totalPages } = await candidateService.getCandidateList({
         jdId:             jd_id,
@@ -326,6 +326,7 @@ export const candidateController = {
         gender:           gender,
         roundId:          round_id,
         actionId:         action_id,
+        subActivityCode:  sub_activity_code || undefined,
         page:             page ?? 1,
         pageSize:         page_size ?? 20,
       })
@@ -609,13 +610,13 @@ export const candidateController = {
 
       const orgId = req.tenantId ?? null
 
-      const { candidate_activity_id, candidate_id, activity_id, sub_activity_id, notes, start_date, is_highlighted, alert_id } = req.body as SaveCandidateActivityDto
+      const { candidate_activity_id, candidate_id, activity_code, sub_activity_code, notes, start_date, is_highlighted, alert_id } = req.body as SaveCandidateActivityDto
 
       const result = await candidateService.saveCandidateActivity({
         orgId,
         candidateId:         candidate_id,
-        activityId:          activity_id,
-        subActivityId:       sub_activity_id,
+        activityCode:        activity_code,
+        subActivityCode:     sub_activity_code,
         notes,
         startDate:           start_date,
         createdBy:           userId,

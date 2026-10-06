@@ -91,6 +91,7 @@ export const candidateRepository = {
   async getUploadStatus(jdId: number): Promise<{
     complete: Record<string, unknown>[]
     duplicate: Record<string, unknown>[]
+    batch_duplicate: Record<string, unknown>[]
     incomplete: Record<string, unknown>[]
   }> {
     try {
@@ -98,7 +99,7 @@ export const candidateRepository = {
         'SELECT mechsoft.fn_get_upload_status_by_jd($1) AS data',
         [jdId]
       )
-      return result.rows[0]?.data ?? { complete: [], duplicate: [], incomplete: [] }
+      return result.rows[0]?.data ?? { complete: [], duplicate: [], batch_duplicate: [], incomplete: [] }
     } catch (error) {
       logger.error('DB error in getUploadStatus', { error })
       throw new AppError('Database error', 500)
@@ -128,12 +129,13 @@ export const candidateRepository = {
     gender?: string
     roundId?: number
     actionId?: number
+    subActivityCode?: string
     page: number
     pageSize: number
   }): Promise<{ summary: Record<string, unknown>; totalCount: number; candidates: Record<string, unknown>[] }> {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS result',
+        'SELECT mechsoft.fn_get_candidate_list($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::text) AS result',
         [
           params.jdId            ?? null,
           params.searchText      ?? null,
@@ -146,6 +148,7 @@ export const candidateRepository = {
           params.gender          ?? null,
           params.roundId         ?? null,
           params.actionId        ?? null,
+          params.subActivityCode ?? null,
         ]
       )
       const raw = result.rows[0]?.result as Record<string, unknown> ?? {}
@@ -418,8 +421,8 @@ export const candidateRepository = {
   async saveCandidateActivity(params: {
     orgId: number | null
     candidateId: number
-    activityId: number
-    subActivityId: number | null
+    activityCode: string
+    subActivityCode: string | null
     notes: string | null
     startDate: string | null
     createdBy: number
@@ -429,12 +432,12 @@ export const candidateRepository = {
   }): Promise<{ success: boolean; message: string; candidateActivityId?: number }> {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_save_candidate_activity($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS result',
+        'SELECT mechsoft.fn_save_candidate_activity($1, $2, $3::varchar, $4::varchar, $5, $6, $7, $8, $9, $10) AS result',
         [
           params.orgId,
           params.candidateId,
-          params.activityId,
-          params.subActivityId,
+          params.activityCode,
+          params.subActivityCode,
           params.notes,
           params.startDate,
           params.createdBy,

@@ -181,10 +181,11 @@ export const candidateService = {
   async getUploadStatus(jdId: number): Promise<{
     complete: Record<string, unknown>[]
     duplicate: Record<string, unknown>[]
+    batch_duplicate: Record<string, unknown>[]
     incomplete: Record<string, unknown>[]
   }> {
     const data = await candidateRepository.getUploadStatus(jdId)
-    logger.info('Upload status fetched', { jdId, complete: data.complete.length, duplicate: data.duplicate.length, incomplete: data.incomplete.length })
+    logger.info('Upload status fetched', { jdId, complete: data.complete.length, duplicate: data.duplicate.length, batchDuplicate: data.batch_duplicate.length, incomplete: data.incomplete.length })
     return data
   },
 
@@ -341,6 +342,7 @@ export const candidateService = {
     gender?: string
     roundId?: number
     actionId?: number
+    subActivityCode?: string
     page: number
     pageSize: number
   }): Promise<{
@@ -406,8 +408,8 @@ export const candidateService = {
   async saveCandidateActivity(params: {
     orgId: number | null
     candidateId: number
-    activityId: number
-    subActivityId?: number | null
+    activityCode: string
+    subActivityCode?: string | null
     notes?: string | null
     startDate?: string | null
     createdBy: number
@@ -418,8 +420,8 @@ export const candidateService = {
     const result = await candidateRepository.saveCandidateActivity({
       orgId:               params.orgId,
       candidateId:         params.candidateId,
-      activityId:          params.activityId,
-      subActivityId:       params.subActivityId ?? null,
+      activityCode:        params.activityCode,
+      subActivityCode:     params.subActivityCode || null,
       notes:               params.notes ?? null,
       startDate:           params.startDate ?? null,
       createdBy:           params.createdBy,
@@ -432,7 +434,7 @@ export const candidateService = {
       throw new AppError(result.message || 'Failed to save candidate activity', 400)
     }
 
-    logger.info('Candidate activity saved', { candidateId: params.candidateId, activityId: params.activityId, candidateActivityId: result.candidateActivityId })
+    logger.info('Candidate activity saved', { candidateId: params.candidateId, activityCode: params.activityCode, subActivityCode: params.subActivityCode, candidateActivityId: result.candidateActivityId })
     return { candidateActivityId: result.candidateActivityId as number }
   },
 

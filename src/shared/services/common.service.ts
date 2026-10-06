@@ -46,6 +46,7 @@ export const commonService = {
         hrStatuses,
         genders,
         activityStatuses,
+        callSubActivities,
       ] = await Promise.all([
         pool.query(
           'SELECT id, industry_type_name AS name FROM public.mst_industry_type WHERE is_active = TRUE ORDER BY industry_type_name'
@@ -95,6 +96,14 @@ export const commonService = {
         pool.query(
           'SELECT status_id AS id, status_name AS name, status_code AS code FROM mechsoft.tbl_activity_status WHERE COALESCE(is_deleted, FALSE) = FALSE ORDER BY status_id'
         ),
+        // Sub-activities of the "Call" activity (activity_id = 1) — My Actions filter
+        pool.query(
+          `SELECT sub_activity_id AS id, sub_activity_name AS name, sub_activity_code AS code, activity_id AS "activityId"
+           FROM mechsoft.tbl_sub_activity_master
+           WHERE activity_id = 1
+             AND COALESCE(is_deleted, FALSE) = FALSE
+           ORDER BY sub_activity_id`
+        ),
       ])
 
       const statusesByModule = statuses.rows.reduce<Record<number, { id: number; name: string }[]>>(
@@ -121,6 +130,7 @@ export const commonService = {
         hrStatuses: hrStatuses.rows,
         genders: genders.rows.map((row) => row.gender),
         activityStatuses: activityStatuses.rows,
+        callSubActivities: callSubActivities.rows,
       }
     } catch (error) {
       logger.error('DB error in getMasterDataList', { error })
