@@ -27,6 +27,24 @@ interface ExtractResult {
   incomplete: Array<ExtractedResumeRaw & { reason: string; isSelected: boolean }>
 }
 
+// Constraints the user added on the JD weightage (source = additional_notes), keyed by
+// the last part of their target ("candidate.derived_signals.company_size" → company_size)
+// with isSelected as the value. A key repeated by several constraints is true if any is selected.
+function buildExtractionConstraints(weightageRaw: Record<string, unknown> | null): Record<string, boolean> {
+  if (!weightageRaw) return {}
+  const weights = (weightageRaw.weights as Record<string, unknown> | undefined) ?? weightageRaw
+  const constraints = Array.isArray(weights.constraints) ? weights.constraints as Record<string, unknown>[] : []
+
+  const result: Record<string, boolean> = {}
+  for (const c of constraints) {
+    if (c.source !== 'additional_notes' || typeof c.target !== 'string') continue
+    const key = c.target.split('.').pop()?.trim()
+    if (!key) continue
+    result[key] = (result[key] ?? false) || c.isSelected === true
+  }
+  return result
+}
+
 function getExtension(filename: string): string {
   const dot = filename.lastIndexOf('.')
   return dot >= 0 ? filename.slice(dot).toLowerCase() : ''
@@ -164,6 +182,8 @@ export const candidateService = {
 
     if (!valid.length) return
 
+    const constraints = buildExtractionConstraints(await candidateRepository.getJDWeightage(jdId))
+
     // Python handles extraction + saving directly to DB.
     // Node.js just forwards files and waits for the stream to complete.
     await resumeExtractClient.extractResumes(
@@ -172,7 +192,7 @@ export const candidateService = {
       orgId,
       createdBy,
       undefined, // no onResult — Python saves directly
-      { jdId, orgId, createdBy }
+      { jdId, orgId, createdBy, constraints }
     )
 
     // Files are kept in uploads/ — required for resume preview/download
@@ -381,7 +401,7 @@ export const candidateService = {
     }
 
     // Step 3: Call Python scoring API — Python saves each score directly via fn_add_update_candidate_score
-    const scoreResponse = await resumeExtractClient.scoreResumes(weightsOnly, candidates, orgId, createdBy)
+    const scoreResponse = await resumeExtractClient.scoreResumes(weightsOnly, candidates, orgId, createdBy, jdId)
 
     logger.info('Candidate scores updated', { jdId, totalScored: scoreResponse.totalScored })
     return { totalScored: scoreResponse.totalScored }
@@ -403,6 +423,17 @@ export const candidateService = {
     const list = await candidateRepository.getAlertList()
     logger.info('Alert list fetched', { count: list.length })
     return list
+  },
+
+  // The logged-in user's pending follow-up for the candidate (null when none)
+  async getPendingFollowUp(
+    orgId: number | null,
+    candidateId: number,
+    userId: number
+  ): Promise<Record<string, unknown> | null> {
+    const data = await candidateRepository.getPendingFollowUp(orgId, candidateId, userId)
+    logger.info('Pending follow-up fetched', { candidateId, found: data != null })
+    return data
   },
 
   async saveCandidateActivity(params: {
@@ -436,6 +467,53 @@ export const candidateService = {
 
     logger.info('Candidate activity saved', { candidateId: params.candidateId, activityCode: params.activityCode, subActivityCode: params.subActivityCode, candidateActivityId: result.candidateActivityId })
     return { candidateActivityId: result.candidateActivityId as number }
+  },
+
+  // Activity row (COMPLETED) and/or follow-up row (PENDING) in one transaction —
+  // the logic lives in fn_save_candidate_activity_with_follow_up.
+  async saveCandidateActivityWithFollowUp(params: {
+    orgId: number | null
+    candidateId: number
+    userId: number
+    activityCode?: string | null
+    subActivityCode?: string | null
+    notes?: string | null
+    alertId?: number | null
+    followUpDate?: string | null
+    followUpAction?: string | null
+    completeFollowUpId?: number | null
+  }): Promise<{ message: string; activityId: number | null; followUpId: number | null; followUpActionTaken: string | null }> {
+    const result = await candidateRepository.saveCandidateActivityWithFollowUp({
+      orgId:           params.orgId,
+      candidateId:     params.candidateId,
+      userId:          params.userId,
+      activityCode:    params.activityCode || null,
+      subActivityCode: params.subActivityCode || null,
+      notes:           params.notes ?? null,
+      alertId:         params.alertId ?? null,
+      followUpDate:    params.followUpDate ?? null,
+      followUpAction:  params.followUpAction ?? null,
+      completeFollowUpId: params.completeFollowUpId ?? null,
+    })
+
+    if (!result.success) {
+      throw new AppError(result.message || 'Failed to save candidate activity', 400)
+    }
+
+    logger.info('Candidate activity / follow-up saved', {
+      candidateId: params.candidateId,
+      activityCode: params.activityCode,
+      activityId: result.activityId,
+      followUpId: result.followUpId,
+      followUpActionTaken: result.followUpActionTaken,
+      completeFollowUpId: params.completeFollowUpId,
+    })
+    return {
+      message: result.message,
+      activityId: result.activityId,
+      followUpId: result.followUpId,
+      followUpActionTaken: result.followUpActionTaken,
+    }
   },
 
   async getCandidateActivity(

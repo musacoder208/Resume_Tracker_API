@@ -74,6 +74,39 @@ export const saveCandidateActivitySchema = z.object({
   alert_id:               z.number().int().positive().nullish(),
 })
 
+// New HR Activity save: activity row and/or follow-up row in one call.
+// Alert belongs to the follow-up, so it is only accepted with follow_up_date.
+export const saveCandidateActivityWithFollowUpSchema = z
+  .object({
+    candidate_id:      z.number().int().positive('candidate_id is required'),
+    activity_code:     z.string().trim().toUpperCase().nullish(),
+    sub_activity_code: z.string().trim().toUpperCase().nullish(),
+    notes:             z.string().nullish(),
+    alert_id:          z.number().int().positive().nullish(),
+    follow_up_date:    z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, 'follow_up_date must be YYYY-MM-DDTHH:mm[:ss]').nullish(),
+    // NEW = insert (completes this user's pending follow-ups); UPDATE_EXISTING = update
+    // the pending follow-up; COMPLETE_AND_NEW = user confirmed completing an overdue one.
+    follow_up_action:  z.enum(['NEW', 'UPDATE_EXISTING', 'COMPLETE_AND_NEW']).nullish(),
+    // My Action "Log Activity": the pending follow-up this save completes.
+    complete_follow_up_id: z.number().int().positive().nullish(),
+  })
+  .refine((b) => (b.activity_code ?? '') !== '' || b.follow_up_date != null, {
+    message: 'Select an activity or a follow-up date',
+    path: ['activity_code'],
+  })
+  .refine((b) => (b.sub_activity_code ?? '') === '' || (b.activity_code ?? '') !== '', {
+    message: 'sub_activity_code requires activity_code',
+    path: ['sub_activity_code'],
+  })
+  .refine((b) => b.alert_id == null || b.follow_up_date != null, {
+    message: 'alert_id requires follow_up_date',
+    path: ['alert_id'],
+  })
+
+export const getPendingFollowUpSchema = z.object({
+  candidate_id: z.coerce.number().int().positive('candidate_id is required'),
+})
+
 export const getCandidateActivitySchema = z.object({
   candidate_id: z.coerce.number().int().positive('candidate_id is required'),
   page:         z.coerce.number().int().positive().default(1),
@@ -105,6 +138,8 @@ export type GetCandidateListDto              = z.infer<typeof getCandidateListSc
 export type GetActivityListDto               = z.infer<typeof getActivityListSchema>
 export type GetSubActivityListDto            = z.infer<typeof getSubActivityListSchema>
 export type SaveCandidateActivityDto         = z.infer<typeof saveCandidateActivitySchema>
+export type SaveCandidateActivityWithFollowUpDto = z.infer<typeof saveCandidateActivityWithFollowUpSchema>
+export type GetPendingFollowUpDto            = z.infer<typeof getPendingFollowUpSchema>
 export type GetCandidateActivityDto          = z.infer<typeof getCandidateActivitySchema>
 export type SaveCandidateActivityHighlightDto = z.infer<typeof saveCandidateActivityHighlightSchema>
 export type GetCallbackRequestListDto        = z.infer<typeof getCallbackRequestListSchema>

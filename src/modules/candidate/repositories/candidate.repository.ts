@@ -464,6 +464,72 @@ export const candidateRepository = {
     }
   },
 
+  async saveCandidateActivityWithFollowUp(params: {
+    orgId: number | null
+    candidateId: number
+    userId: number
+    activityCode: string | null
+    subActivityCode: string | null
+    notes: string | null
+    alertId: number | null
+    followUpDate: string | null
+    followUpAction: string | null
+    completeFollowUpId: number | null
+  }): Promise<{ success: boolean; message: string; activityId: number | null; followUpId: number | null; followUpActionTaken: string | null }> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_save_candidate_activity_with_follow_up($1, $2, $3, $4::varchar, $5::varchar, $6, $7, $8::timestamp, $9::varchar, $10::bigint) AS result',
+        [
+          params.orgId,
+          params.candidateId,
+          params.userId,
+          params.activityCode,
+          params.subActivityCode,
+          params.notes,
+          params.alertId,
+          params.followUpDate,
+          params.followUpAction,
+          params.completeFollowUpId,
+        ]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return {
+        success: data.success === true,
+        message: (data.message as string) ?? '',
+        activityId: (data.activity_id as number | null) ?? null,
+        followUpId: (data.follow_up_id as number | null) ?? null,
+        followUpActionTaken: (data.follow_up_action_taken as string | null) ?? null,
+      }
+    } catch (error) {
+      const e = error as { message?: string; detail?: string; hint?: string; code?: string }
+      logger.error('DB error in saveCandidateActivityWithFollowUp', {
+        message: e.message,
+        detail: e.detail,
+        hint: e.hint,
+        code: e.code,
+      })
+      throw new AppError('Database error', 500)
+    }
+  },
+
+  async getPendingFollowUp(
+    orgId: number | null,
+    candidateId: number,
+    userId: number
+  ): Promise<Record<string, unknown> | null> {
+    try {
+      const result = await pool.query(
+        'SELECT mechsoft.fn_get_pending_follow_up($1, $2, $3) AS result',
+        [orgId, candidateId, userId]
+      )
+      const data = (result.rows[0]?.result as Record<string, unknown>) ?? {}
+      return data.follow_up_id != null ? data : null
+    } catch (error) {
+      logger.error('DB error in getPendingFollowUp', { error })
+      throw new AppError('Database error', 500)
+    }
+  },
+
   async getAlertList(): Promise<Array<{ alert_id: number; alert_name: string }>> {
     try {
       const result = await pool.query(

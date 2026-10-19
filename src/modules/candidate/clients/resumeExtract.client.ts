@@ -28,7 +28,7 @@ export const resumeExtractClient = {
     orgId: number,
     userId: number,
     onResult?: (result: ExtractedResumeRaw) => Promise<void>,
-    meta?: { jdId: number; orgId: number; createdBy: number }
+    meta?: { jdId: number; orgId: number; createdBy: number; constraints?: Record<string, boolean> }
   ): Promise<ExtractedResumeRaw[]> {
     try {
       const form = new FormData()
@@ -40,6 +40,8 @@ export const resumeExtractClient = {
         form.append('jd_id', String(meta.jdId))
         form.append('org_id', String(meta.orgId))
         form.append('user_id', String(meta.createdBy))
+        // e.g. '{"location": true, "company_size": true}'
+        form.append('constraints', JSON.stringify(meta.constraints ?? {}))
       }
       files.forEach((file) => {
         form.append('files', fs.createReadStream(file.path), {
@@ -106,12 +108,13 @@ export const resumeExtractClient = {
     weightageJson: Record<string, unknown>,
     resumeJson: Record<string, unknown>[],
     orgId: number,
-    userId: number
+    userId: number,
+    jdId: number
   ): Promise<{ totalScored: number }> {
     try {
       const response = await axios.post(
         `${env.CANDIDATE_SCORING_API_URL}/score-resume-stream`,
-        { weightage_json: weightageJson, resume_json: resumeJson, org_id: String(orgId), user_id: String(userId) },
+        { weightage_json: weightageJson, resume_json: resumeJson, org_id: String(orgId), user_id: String(userId), jd_id: String(jdId) },
         {
           responseType: 'stream',
           timeout: 300000,

@@ -3,7 +3,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { validate, validateQuery } from '@shared/validators/validate'
-import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema, getActivityListSchema, getSubActivityListSchema, saveCandidateActivitySchema, getCandidateActivitySchema, saveCandidateActivityHighlightSchema, getCallbackRequestListSchema, markCandidateActivityCompletedSchema } from './schemas/candidate.schema'
+import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema, getActivityListSchema, getSubActivityListSchema, saveCandidateActivitySchema, saveCandidateActivityWithFollowUpSchema, getPendingFollowUpSchema, getCandidateActivitySchema, saveCandidateActivityHighlightSchema, getCallbackRequestListSchema, markCandidateActivityCompletedSchema } from './schemas/candidate.schema'
 import { candidateController } from './candidate.controller'
 
 const storage = multer.diskStorage({
@@ -44,6 +44,8 @@ router.get('/getActivityList', validateQuery(getActivityListSchema), candidateCo
 router.get('/getAlertList', candidateController.getAlertList)
 router.get('/getSubActivityList', validateQuery(getSubActivityListSchema), candidateController.getSubActivityList)
 router.post('/saveCandidateActivity', validate(saveCandidateActivitySchema), candidateController.saveCandidateActivity)
+router.post('/saveCandidateActivityWithFollowUp', validate(saveCandidateActivityWithFollowUpSchema), candidateController.saveCandidateActivityWithFollowUp)
+router.get('/getPendingFollowUp', validateQuery(getPendingFollowUpSchema), candidateController.getPendingFollowUp)
 router.get('/getCandidateActivity', validateQuery(getCandidateActivitySchema), candidateController.getCandidateActivity)
 router.post('/saveCandidateActivityHighlight', validate(saveCandidateActivityHighlightSchema), candidateController.saveCandidateActivityHighlight)
 router.get('/getCallbackRequestList', validateQuery(getCallbackRequestListSchema), candidateController.getCallbackRequestList)

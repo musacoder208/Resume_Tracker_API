@@ -8,7 +8,7 @@ import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
 import logger from '@shared/logger/logger'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto, GetCallbackRequestListDto, MarkCandidateActivityCompletedDto } from './schemas/candidate.schema'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, SaveCandidateActivityWithFollowUpDto, GetPendingFollowUpDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto, GetCallbackRequestListDto, MarkCandidateActivityCompletedDto } from './schemas/candidate.schema'
 
 // previewResume: pdf/jpg/jpeg/png render natively in the browser and are
 // streamed as-is; everything else (doc, docx, ...) is converted to PDF via
@@ -629,6 +629,65 @@ export const candidateController = {
         code: 'CANDIDATE_ACTIVITY_SAVED',
         message: 'Activity saved successfully',
         data: { candidate_activity_id: result.candidateActivityId },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async saveCandidateActivityWithFollowUp(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const orgId = req.tenantId ?? null
+
+      const { candidate_id, activity_code, sub_activity_code, notes, alert_id, follow_up_date, follow_up_action, complete_follow_up_id } = req.body as SaveCandidateActivityWithFollowUpDto
+
+      const result = await candidateService.saveCandidateActivityWithFollowUp({
+        orgId,
+        candidateId:     candidate_id,
+        userId,
+        activityCode:    activity_code,
+        subActivityCode: sub_activity_code,
+        notes,
+        alertId:         alert_id,
+        followUpDate:    follow_up_date,
+        followUpAction:  follow_up_action,
+        completeFollowUpId: complete_follow_up_id,
+      })
+
+      sendSuccess(res, {
+        code: 'CANDIDATE_ACTIVITY_SAVED',
+        message: result.message,
+        data: {
+          activity_id: result.activityId,
+          follow_up_id: result.followUpId,
+          follow_up_action_taken: result.followUpActionTaken,
+        },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  async getPendingFollowUp(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId
+      if (!userId) throw new AppError('Unauthorized', 401)
+
+      const orgId = req.tenantId ?? null
+
+      const { candidate_id } = req.query as unknown as GetPendingFollowUpDto
+
+      const data = await candidateService.getPendingFollowUp(orgId, candidate_id, userId)
+
+      sendSuccess(res, {
+        code: 'PENDING_FOLLOW_UP_FETCHED',
+        message: 'Pending follow-up fetched successfully',
+        data,
         requestId: req.traceId,
       })
     } catch (error) {
