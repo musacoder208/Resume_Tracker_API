@@ -184,8 +184,8 @@ async function buildAiUsageWorkbook(data: ExportData, query: AiUsageJdsQueryDto)
   const wb = new ExcelJS.Workbook()
   wb.created = new Date()
 
-  // ── Sheet 1: Summary — search parameters, then totals ──
-  const summary = wb.addWorksheet('Summary')
+  // ── Sheet 1: Header — search parameters ──
+  const summary = wb.addWorksheet('Header')
   summary.columns = [{ width: 22 }, { width: 50 }]
   const title = summary.addRow(['AI Usage Report'])
   title.font = { bold: true, size: 14 }
@@ -199,24 +199,6 @@ async function buildAiUsageWorkbook(data: ExportData, query: AiUsageJdsQueryDto)
   summary.addRow(['Created By', data.filters.created_by ?? ''])
   const createdRow = summary.addRow(['Created Date', nowInIst()])
   createdRow.getCell(2).numFmt = FMT_DATETIME
-  summary.addRow([])
-  summary.addRow(['Totals']).font = { bold: true }
-  const s = data.summary
-  const totals: Array<[string, number, string]> = [
-    ['Total JDs', toNumber(s.total_jds), FMT_INT],
-    ['Total Candidates', toNumber(s.total_candidates), FMT_INT],
-    ['Calls', toNumber(s.calls), FMT_INT],
-    ['Failed', toNumber(s.failed_calls), FMT_INT],
-    ['Input Tokens', toNumber(s.input_tokens), FMT_INT],
-    ['Output Tokens', toNumber(s.output_tokens), FMT_INT],
-    ['Total Tokens', toNumber(s.total_tokens), FMT_INT],
-    ['Total Cost ($)', toNumber(s.total_cost), FMT_COST],
-  ]
-  for (const [label, value, fmt] of totals) {
-    const row = summary.addRow([label, value])
-    row.getCell(2).numFmt = fmt
-    row.getCell(2).alignment = { horizontal: 'left' }
-  }
   summary.getColumn(1).font = { bold: true }
 
   // ── Sheet 2: JDs ──
