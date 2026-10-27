@@ -35,6 +35,12 @@ const envSchema = z.object({
   PYTHON_API_URL: z.string().url().default('http://127.0.0.1:8002'),
   CANDIDATE_EXTRACT_API_URL: z.string().url().default('http://127.0.0.1:8005'),
   CANDIDATE_SCORING_API_URL: z.string().url().default('http://127.0.0.1:8006'),
+
+  // "HH:mm" (24h) for the activity form's "Call Tomorrow" shortcut — sent to the UI via /common/app-settings
+  VITE_CALL_TOMORROW_TIME: z
+    .string()
+    .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'must be HH:mm (24h), e.g. 09:30')
+    .default('09:30'),
 });
 
 const result = envSchema.safeParse(process.env);

@@ -3,8 +3,23 @@ import type { RequestWithUser } from '@shared/types/global.types'
 import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { commonService } from '@shared/services/common.service'
+import { env } from '@shared/config/env'
 
 export const commonController = {
+  // UI settings that come from the backend .env
+  getAppSettings(req: RequestWithUser, res: Response, next: NextFunction): void {
+    try {
+      sendSuccess(res, {
+        code: 'APP_SETTINGS_FETCHED',
+        message: 'App settings fetched',
+        data: { call_tomorrow_time: env.VITE_CALL_TOMORROW_TIME },
+        requestId: req.traceId,
+      })
+    } catch (error) {
+      next(error)
+    }
+  },
+
   async getMasterData(req: RequestWithUser, res: Response, next: NextFunction): Promise<void> {
     try {
       const { tenantId } = req

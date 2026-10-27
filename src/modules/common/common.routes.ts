@@ -8,5 +8,6 @@ router.use(authMiddleware)
 
 router.get('/master-data', commonController.getMasterData)
 router.get('/module-id', commonController.getModuleIdByCode)
+router.get('/app-settings', commonController.getAppSettings)
 
 export default router
