@@ -36,6 +36,10 @@ const envSchema = z.object({
   CANDIDATE_EXTRACT_API_URL: z.string().url().default('http://127.0.0.1:8005'),
   CANDIDATE_SCORING_API_URL: z.string().url().default('http://127.0.0.1:8006'),
 
+  // Chat Assistant — Python /api/resume-tracker/ask + /reply (falls back to PYTHON_API_URL when not set)
+  CHAT_PYTHON_API_URL: z.string().url().optional(),
+  CHAT_PYTHON_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+
   // "HH:mm" (24h) for the activity form's "Call Tomorrow" shortcut — sent to the UI via /common/app-settings
   VITE_CALL_TOMORROW_TIME: z
     .string()
