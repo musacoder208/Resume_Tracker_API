@@ -55,6 +55,14 @@ export const getCandidateListSchema = z.object({
   page_size:         z.coerce.number().int().positive().max(100).default(20),
 })
 
+// Upload screen — one page of one tab (duplicate tab = duplicate + batch_duplicate).
+export const getUploadStatusSchema = z.object({
+  jd_id:     z.coerce.number().int().positive(),
+  tab:       z.enum(['success', 'duplicate', 'incomplete']).default('success'),
+  page:      z.coerce.number().int().positive().default(1),
+  page_size: z.coerce.number().int().positive().max(100).default(20),
+})
+
 export const getActivityListSchema = z.object({
   activity_type: z.string().optional(),
 })
@@ -135,6 +143,7 @@ export type UpdateCandidateScoreDto          = z.infer<typeof updateCandidateSco
 export type SaveCandidateFeedbackDto         = z.infer<typeof saveCandidateFeedbackSchema>
 export type SaveHRFeedbackDto                = z.infer<typeof saveHRFeedbackSchema>
 export type GetCandidateListDto              = z.infer<typeof getCandidateListSchema>
+export type GetUploadStatusDto               = z.infer<typeof getUploadStatusSchema>
 export type GetActivityListDto               = z.infer<typeof getActivityListSchema>
 export type GetSubActivityListDto            = z.infer<typeof getSubActivityListSchema>
 export type SaveCandidateActivityDto         = z.infer<typeof saveCandidateActivitySchema>

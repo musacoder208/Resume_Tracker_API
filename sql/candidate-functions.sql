@@ -1094,52 +1094,103 @@ $$;
 
 -- ------------------------------------------------------------
 -- 7. fn_get_upload_status_by_jd
---    Returns candidates grouped by upload_status for a JD.
---    Used by the upload screen refresh button.
+--    Upload screen — server-side paginated.
+--    Returns ONE page of ONE tab plus counts for all tabs:
+--      { rows, pagination, counts }
+--    Tabs: success    → upload_status 'complete'
+--          duplicate  → 'duplicate' + 'batch_duplicate'
+--          incomplete → 'incomplete'
+--    page_size is clamped to 1..100; a page past the end is moved
+--    back to the last page (e.g. after scoring emptied it).
 -- ------------------------------------------------------------
+DROP FUNCTION IF EXISTS mechsoft.fn_get_upload_status_by_jd(BIGINT);
+
 CREATE OR REPLACE FUNCTION mechsoft.fn_get_upload_status_by_jd(
-  p_jd_id BIGINT
+  p_jd_id     BIGINT,
+  p_tab       VARCHAR DEFAULT 'success',
+  p_page      INTEGER DEFAULT 1,
+  p_page_size INTEGER DEFAULT 20
 )
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  v_statuses    TEXT[];
+  v_size        INTEGER := LEAST(GREATEST(COALESCE(p_page_size, 20), 1), 100);
+  v_page        INTEGER := GREATEST(COALESCE(p_page, 1), 1);
+  v_counts      JSONB;
+  v_tab_total   INTEGER;
+  v_total_pages INTEGER;
+  v_rows        JSONB;
 BEGIN
-  RETURN (
-    SELECT jsonb_build_object(
-      'complete',   COALESCE(jsonb_agg(row) FILTER (WHERE upload_status = 'complete'),   '[]'::JSONB),
-      'duplicate',  COALESCE(jsonb_agg(row) FILTER (WHERE upload_status = 'duplicate'),  '[]'::JSONB),
-      'incomplete', COALESCE(jsonb_agg(row) FILTER (WHERE upload_status = 'incomplete'), '[]'::JSONB)
-    )
+  v_statuses := CASE p_tab
+    WHEN 'success'    THEN ARRAY['complete']
+    WHEN 'duplicate'  THEN ARRAY['duplicate', 'batch_duplicate']
+    WHEN 'incomplete' THEN ARRAY['incomplete']
+  END;
+  IF v_statuses IS NULL THEN
+    RAISE EXCEPTION 'Invalid tab: %', p_tab USING ERRCODE = '22023';
+  END IF;
+
+  -- counts for tab badges + Processing Summary, and the selected tab's total
+  SELECT jsonb_build_object(
+           'total',      COUNT(*),
+           'success',    COUNT(*) FILTER (WHERE ch.upload_status = 'complete'),
+           'duplicate',  COUNT(*) FILTER (WHERE ch.upload_status IN ('duplicate', 'batch_duplicate')),
+           'incomplete', COUNT(*) FILTER (WHERE ch.upload_status = 'incomplete')),
+         COUNT(*) FILTER (WHERE ch.upload_status = ANY(v_statuses))
+    INTO v_counts, v_tab_total
+    FROM mechsoft.tbl_candidates_header ch
+   WHERE ch.jd_id      = p_jd_id
+     AND ch.is_deleted = FALSE;
+
+  v_total_pages := GREATEST(CEIL(v_tab_total::NUMERIC / v_size)::INTEGER, 1);
+  v_page        := LEAST(v_page, v_total_pages);
+
+  SELECT COALESCE(jsonb_agg(sub.row ORDER BY sub.created_date DESC, sub.candidate_id DESC), '[]'::JSONB)
+    INTO v_rows
     FROM (
       SELECT jsonb_build_object(
-        'candidate_id',      ch.candidate_id,
-        'full_name',         ch.full_name,
-        'email',             ch.email,
-        'phone',             ch.phone,
-        'current_job_title', ch.current_job_title,
-        'upload_status',     ch.upload_status,
-        'status_code',       ms.status_code,
-        'reason',            ch.reason,
-        'file_name',         ch.resume_file_name,
-        'file_path',         ch.resume_file_path,
-        'created_date',      ch.created_date,
-        'is_selected',       CASE
-                               WHEN ch.upload_status = 'complete'
-                                AND ms.status_code IN ('draft', 'ready')
-                               THEN TRUE
-                               ELSE FALSE
-                             END
-      ) AS row,
-      ch.upload_status
-      FROM mechsoft.tbl_candidates_header ch
-      LEFT JOIN public.mst_status ms ON ms.status_id = ch.status_id
-      WHERE ch.jd_id      = p_jd_id
-        AND ch.is_deleted = FALSE
-      ORDER BY ch.created_date DESC
-    ) sub
+               'candidate_id',      ch.candidate_id,
+               'full_name',         ch.full_name,
+               'email',             ch.email,
+               'phone',             ch.phone,
+               'current_job_title', ch.current_job_title,
+               'upload_status',     ch.upload_status,
+               'status_code',       ms.status_code,
+               'reason',            ch.reason,
+               'file_name',         ch.resume_file_name,
+               'file_path',         ch.resume_file_path,
+               'created_date',      ch.created_date,
+               'is_selected',       (ch.upload_status = 'complete'
+                                     AND ms.status_code IN ('draft', 'ready'))
+             ) AS row,
+             ch.created_date,
+             ch.candidate_id
+        FROM mechsoft.tbl_candidates_header ch
+        LEFT JOIN public.mst_status ms ON ms.status_id = ch.status_id
+       WHERE ch.jd_id      = p_jd_id
+         AND ch.is_deleted = FALSE
+         AND ch.upload_status = ANY(v_statuses)
+       ORDER BY ch.created_date DESC, ch.candidate_id DESC
+       LIMIT v_size OFFSET (v_page - 1) * v_size
+    ) sub;
+
+  RETURN jsonb_build_object(
+    'rows',       v_rows,
+    'pagination', jsonb_build_object(
+                    'total_count', v_tab_total,
+                    'page',        v_page,
+                    'page_size',   v_size,
+                    'total_pages', v_total_pages),
+    'counts',     v_counts
   );
 END;
 $$;
+
+CREATE INDEX IF NOT EXISTS ix_candidates_header_jd_status_date
+  ON mechsoft.tbl_candidates_header (jd_id, upload_status, created_date DESC)
+  WHERE is_deleted = FALSE;
 
 
 -- ------------------------------------------------------------

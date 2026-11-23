@@ -3,7 +3,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { authMiddleware } from '@shared/middleware/auth.middleware'
 import { validate, validateQuery } from '@shared/validators/validate'
-import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema, getActivityListSchema, getSubActivityListSchema, saveCandidateActivitySchema, saveCandidateActivityWithFollowUpSchema, getPendingFollowUpSchema, getCandidateActivitySchema, saveCandidateActivityHighlightSchema, getCallbackRequestListSchema, markCandidateActivityCompletedSchema } from './schemas/candidate.schema'
+import { saveCandidatesSchema, updateCandidateScoreSchema, saveCandidateFeedbackSchema, saveHRFeedbackSchema, saveHRAnswersSchema, updateCandidateDetailsSchema, getCandidateListSchema, getUploadStatusSchema, getActivityListSchema, getSubActivityListSchema, saveCandidateActivitySchema, saveCandidateActivityWithFollowUpSchema, getPendingFollowUpSchema, getCandidateActivitySchema, saveCandidateActivityHighlightSchema, getCallbackRequestListSchema, markCandidateActivityCompletedSchema } from './schemas/candidate.schema'
 import { candidateController } from './candidate.controller'
 
 const storage = multer.diskStorage({
@@ -27,7 +27,7 @@ router.use(authMiddleware)
 
 router.post('/uploadResumes', upload.array('files'), candidateController.uploadResumes)
 router.post('/uploadResumesStream', upload.array('files'), candidateController.uploadResumesStream)
-router.get('/getUploadStatus', candidateController.getUploadStatus)
+router.get('/getUploadStatus', validateQuery(getUploadStatusSchema), candidateController.getUploadStatus)
 router.post('/selectCandidateFiles', upload.array('files'), candidateController.selectCandidateFiles)
 router.post('/saveCandidates', validate(saveCandidatesSchema), candidateController.saveCandidates)
 router.get('/getCandidateList', validateQuery(getCandidateListSchema), candidateController.getCandidateList)

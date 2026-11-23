@@ -2,6 +2,20 @@ import { pool } from '@shared/config/db'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
 
+export interface UploadStatusParams {
+  jdId: number
+  tab: 'success' | 'duplicate' | 'incomplete'
+  page: number
+  pageSize: number
+}
+
+// Shape returned by mechsoft.fn_get_upload_status_by_jd(jd_id, tab, page, page_size)
+export interface UploadStatusPage {
+  rows: Record<string, unknown>[]
+  pagination: { total_count: number; page: number; page_size: number; total_pages: number }
+  counts: { total: number; success: number; duplicate: number; incomplete: number }
+}
+
 export const candidateRepository = {
   async checkDuplicate(fullName: string, email: string, phone: string): Promise<boolean> {
     try {
@@ -88,18 +102,17 @@ export const candidateRepository = {
     }
   },
 
-  async getUploadStatus(jdId: number): Promise<{
-    complete: Record<string, unknown>[]
-    duplicate: Record<string, unknown>[]
-    batch_duplicate: Record<string, unknown>[]
-    incomplete: Record<string, unknown>[]
-  }> {
+  async getUploadStatus(params: UploadStatusParams): Promise<UploadStatusPage> {
     try {
       const result = await pool.query(
-        'SELECT mechsoft.fn_get_upload_status_by_jd($1) AS data',
-        [jdId]
+        'SELECT mechsoft.fn_get_upload_status_by_jd($1, $2, $3, $4) AS data',
+        [params.jdId, params.tab, params.page, params.pageSize]
       )
-      return result.rows[0]?.data ?? { complete: [], duplicate: [], batch_duplicate: [], incomplete: [] }
+      return (result.rows[0]?.data as UploadStatusPage | undefined) ?? {
+        rows: [],
+        pagination: { total_count: 0, page: 1, page_size: params.pageSize, total_pages: 1 },
+        counts: { total: 0, success: 0, duplicate: 0, incomplete: 0 },
+      }
     } catch (error) {
       logger.error('DB error in getUploadStatus', { error })
       throw new AppError('Database error', 500)

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import { resumeExtractClient, ExtractedResumeRaw } from '../clients/resumeExtract.client'
 import { candidateRepository } from '../repositories/candidate.repository'
+import type { UploadStatusParams, UploadStatusPage } from '../repositories/candidate.repository'
 import logger from '@shared/logger/logger'
 import { AppError } from '@shared/middleware/errorHandler'
 
@@ -198,14 +199,14 @@ export const candidateService = {
     // Files are kept in uploads/ — required for resume preview/download
   },
 
-  async getUploadStatus(jdId: number): Promise<{
-    complete: Record<string, unknown>[]
-    duplicate: Record<string, unknown>[]
-    batch_duplicate: Record<string, unknown>[]
-    incomplete: Record<string, unknown>[]
-  }> {
-    const data = await candidateRepository.getUploadStatus(jdId)
-    logger.info('Upload status fetched', { jdId, complete: data.complete.length, duplicate: data.duplicate.length, batchDuplicate: data.batch_duplicate.length, incomplete: data.incomplete.length })
+  async getUploadStatus(params: UploadStatusParams): Promise<UploadStatusPage> {
+    const data = await candidateRepository.getUploadStatus(params)
+    logger.info('Upload status fetched', {
+      ...params,
+      rows: data.rows.length,
+      totalCount: data.pagination.total_count,
+      counts: data.counts,
+    })
     return data
   },
 

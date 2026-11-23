@@ -8,7 +8,7 @@ import { AppError } from '@shared/middleware/errorHandler'
 import { sendSuccess } from '@shared/utils/response'
 import { candidateService } from './services/candidate.service'
 import logger from '@shared/logger/logger'
-import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, SaveCandidateActivityWithFollowUpDto, GetPendingFollowUpDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto, GetCallbackRequestListDto, MarkCandidateActivityCompletedDto } from './schemas/candidate.schema'
+import type { SaveCandidatesDto, UpdateCandidateScoreDto, SaveCandidateFeedbackDto, SaveHRFeedbackDto, SaveHRAnswersDto, UpdateCandidateDetailsDto, GetCandidateListDto, GetUploadStatusDto, GetActivityListDto, GetSubActivityListDto, SaveCandidateActivityDto, SaveCandidateActivityWithFollowUpDto, GetPendingFollowUpDto, GetCandidateActivityDto, SaveCandidateActivityHighlightDto, GetCallbackRequestListDto, MarkCandidateActivityCompletedDto } from './schemas/candidate.schema'
 
 // previewResume: pdf/jpg/jpeg/png render natively in the browser and are
 // streamed as-is; everything else (doc, docx, ...) is converted to PDF via
@@ -140,10 +140,15 @@ export const candidateController = {
       const userId = req.userId
       if (!userId) throw new AppError('Unauthorized', 401)
 
-      const jdId = parseInt(req.query?.jd_id as string, 10)
-      if (isNaN(jdId) || jdId <= 0) throw new AppError('jd_id is required', 400)
+      // Validated + defaulted by validateQuery(getUploadStatusSchema)
+      const { jd_id, tab, page, page_size } = req.query as unknown as GetUploadStatusDto
 
-      const data = await candidateService.getUploadStatus(jdId)
+      const data = await candidateService.getUploadStatus({
+        jdId:     jd_id,
+        tab,
+        page:     page ?? 1,
+        pageSize: page_size ?? 20,
+      })
 
       sendSuccess(res, {
         code: 'UPLOAD_STATUS_FETCHED',
